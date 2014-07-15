@@ -1,6 +1,6 @@
-# Importing LastPass Data into 1Password
+# Importing eWallet Data into 1Password
 
-The script lastpass_to_1p4.pl will convert a LastPass CSV text file export into a 1PIF format that can be imported into 1Password 4 for Mac or Windows.
+The script ewallet_to_1p4.pl will convert an eWallet 7.x text file export into either a 1PIF or CSV format that can be imported into 1Password 4.  By default, the script will create a .1pif file, as the .1pif format has superior importing capabilities.
 
 ## Requirements
 
@@ -14,6 +14,10 @@ The script is a Perl script. You will run it in a command shell under either OS 
 
 - 1Password for Windows, version 4.0 or higher
 - [ActivePerl](http://www.activestate.com/activeperl) version 5.16 or later.
+
+### eWallet
+
+- eWallet version 7.x (tested w/7.6.4, but earlier versions probably work).
 
 
 ## Instructions:
@@ -31,25 +35,25 @@ OS X includes Perl. Windows users can download and install ActivePerl for your O
 
 You do not need to install the documentation or example scripts.  Allow the installer to modify your PATH.  When you are done with the conversion, you can uninstall ActivePerl if you want.
 
-### 2. Export LastPass Data
+### 2. Export eWallet Data
 
-Open the LastPass web page, and export its database to a CSV text file using the LastPass browser extension's menu item:
+Launch eWallet, and export its database to a text file using the menu item:
 
-    Tools > Advanced Tools > Export To > LastPass CSV File
+    File > Save As > Text File...
 
-Save the file to your Desktop, perhaps as the name lastpass_export.txt (the remainder of these instructions will assume that name).  Once exported, you can close the browser page if you wish.
+and save the file to your Desktop, perhaps with the name ewallet_export.txt (the remainder of these instructions will assume that name).  You can then quit eWallet if you wish.
 
 ### 3. Open Terminal.app or cmd.exe
 
 On OS X, open Terminal (under Applications > Utilities, or type Terminal.app in Spotlight and select it under Applications).  When a Terminal window opens, type:
 
-    cd Desktop/onepassword-utilities/lastpass_to_1p4
+    cd Desktop/onepassword-utilities/ewallet_to_1p4
 
 and hit Enter.
 
 On Windows, start the command shell by going to the Start menu, and entering cmd.exe in the Search programs and files box, and hit Enter.  When the cmd.exe command line window opens, type:
 
-    cd Desktop\onepassword-utilities\lastpass_to_1p4
+    cd Desktop\onepassword-utilities\ewallet_to_1p4
 
 and hit Enter.
 
@@ -57,15 +61,15 @@ and hit Enter.
 
 On OS X, in the Terminal window, enter the command:
 
-    perl lastpass_to_1p4.pl -v ../lastpass_export.txt
+    perl ewallet_to_1p4.pl -v ../ewallet_export.txt
 
 On Windows, in the command shell, enter the command:
 
-    perl lastpass_to_1p4.pl -v ..\lastpass_export.txt
+    perl ewallet_to_1p4.pl -v ..\ewallet_export.txt
 
-where lastpass_export.txt is the name you gave to your exported LastPass CSV file. The command line above assumes the script is in the folder onepassword-utilities/lastpass_to_1p4 on your Desktop and the exported LastPass CSV file is also on your Desktop.  Hit Enter after you've entered the command above.
+where ewallet_export.txt is the name you gave to your exported eWallet text file.  The command line above assumes the script is in the folder onepassword-utilities/ewallet_to_1p4 on your Desktop and the exported ewallet text file is also on your Desktop.  Hit Enter after you've entered the command above.
 
-The script only reads the file you exported from LastPass, and does not touch your original LastPass data file, nor does it send any data anywhere.  Since the script is readable by anyone, you are free and welcome to examine the script and ask questions should you have any concerns.
+The script only reads the file you exported from eWallet, and does not touch your original eWallet data file, nor does it send any data anywhere.  Since the script is readable by anyone, you are free and welcome to examine the script and ask questions should you have any concerns.
 
 ### 5. Import 1PIF into 1Password
 
@@ -75,13 +79,13 @@ If all went well, you should now have the file 1P4_import.1pif on your Desktop. 
 
 and select the file 1P4_import.1pif.
 
-1Password 4 will indicate how many records were imported, and if the import is successful, all your LastPass records for the specific type will be imported.  These may require some clean-up, as some fields do not (currently) map into 1Password 4 directly, or may be problematic (certain date fields, for example).  However, any unmapped fields will be pushed to the card's Notes field, so the data will be available for you inside 1Password 4.
+1Password 4 will indicate how many records were imported, and if the import is successful, all your eWallet records for the specific type will be imported.  These may require some clean-up, as some fields do not (currently) map into 1Password 4 directly, or may be problematic (certain date fields, for example, or eWallet's Categories).  However, any unmapped fields will be pushed to the card's Notes field, so the data will be available for you inside 1Password 4.
 
 ### 6. Securely Remove Exported Data
 
-Once you are done importing, be sure to delete the exported lastpass_export.txt file you created in Step 2, as well as the 1P4_import.1pif import file created in Step 4 by the converter script, since these files contain your unencrypted data.
+Once you are done importing, be sure to delete the exported ewallet_export.txt file you created in Step 2, as well as the 1P4_import.1pif import file created in Step 4 by the converter script, since these files contain your unencrypted data.
 
-If you have problems, feel free to post [in this forum thread](https://discussions.agilebits.com/discussion/26346) for assistance.
+If you have problems, feel free to post [in this forum thread](https://discussions.agilebits.com/discussion/23919) for assistance.
 
 
 ## Miscellaneous Notes:
@@ -90,9 +94,12 @@ If you have problems, feel free to post [in this forum thread](https://discussio
 
 Command line options and usage help is available.  For usage help, enter the command:
 
-   perl lastpass_to_1p4.pl --help
+    perl ewallet_to_1p4.pl --help
+
+The default format for this converter is 1PIF.  If for some reason you want to use CSV, add the option --format csv to the command line before the import file name.  CSV conversion will create up to four .csv import files, with names that begin with "1P4_import_".   These are conversions of one particular type that can be imported into 1Password 4.  To import these, at the bottom of the File > Import dialog, set the File Format to Comma Delimited Text (.csv),  and set the the Import As pulldown to correspond to the file type you are importing.  The names should be obvious.  You will have to do one import for each type that 1Password 4 currently imports: Login, Credit Cards, Software License, and Secure Notes.  You may not have all four files; it depends on the entry types you had in your original eWallet database.
 
 ### Source Folders
+
 The included folders "Text" and "UUID" contain the Text::CSV and UUID::Tiny modules used by the script.  These are included so that you do not have to install them (they are not installed by default on OS X, so is included here for convenience).  The modules are available on CPAN.
 
 ### Alternate Download Locations

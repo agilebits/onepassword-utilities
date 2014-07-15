@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# Converts an eWallet export into either a PIF or CSV format for importing into 1P4
+# Converts an eWallet export into either a 1PIF or CSV format for importing into 1P4
 #
 # http://learn.agilebits.com/1Password4/Mac/en/KB/import.html#csv--comma-separated-values
 # http://discussions.agilebits.com/discussion/comment/114976/#Comment_114976
@@ -45,7 +45,7 @@ Usage: $progstr <options> <ewallet_export_text_file>
     --outfile         | -o <converted.csv>	# use file named converted.csv as the output file
     --type            | -t <type list>		# comma separated list of one or more types from list below
     --verbose         | -v			# output operations more verbosely
-    --[no]watchtower  | -w			# set each card's creation date to trigger WatchTower checks (default: on)
+    --[no]watchtower  | -w			# set each card's creation date to trigger Watchtower checks (default: on)
 
     supported types:
 	- for csv: $supported_types_csv
@@ -573,7 +573,7 @@ sub export_pif {
 	    }
 
 	    ($f{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM(), 'cappella.us')) =~ s/-//g;
-	    # set the creaated time to 1/1/2000 to help trigger WatchTower checks, unless --nowatchtower was specified
+	    # set the creaated time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
 	    $f{'createdAt'} = 946713600		if $opts{'watchtower'};
 
 	    my $encoded = encode_json \%f;
