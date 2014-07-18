@@ -6,7 +6,7 @@ A huge hat tip to [@MrC](https://discussions.agilebits.com/profile/77142/MrC) fo
 
 ## Downloading
 
-You can download these utilities by clicking the Download button:
+You can download these utilities by clicking the "Download ZIP" button in the sidebar:
 
 ![](http://i.agilebits.com/dt/AgileBits_onepassword-utilities_1975D75A.png)
 
