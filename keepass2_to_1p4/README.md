@@ -1,6 +1,6 @@
 # Importing KeePass 2 Data into 1Password
 
-The script keepass2_to_1p4.pl will convert a KeePass2 XML (2.x) export file into a CSV format that can be imported into 1Password 4.
+The script keepass2_to_1p4.pl will convert a KeePass 2 XML (2.x) export file into a CSV format that can be imported into 1Password 4.
 
 ## Requirements
 
@@ -37,11 +37,11 @@ You do not need to install the documentation or example scripts.  Allow the inst
 
 ### 2. Export KeePass 2 Data
 
-Launch KeePass2, and export its databse to an XML export file using the menu item:
+Launch KeePass 2, and export its database to an XML export file using the menu item:
 
     File > Export ...
 
-and select the KeePass XML (2.x) format.  In the File: Export to: section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your Desktop folder, and in the File name area, enter the name keepass2_export.xml (the remainder of these instructions will assume that name).  Click Save, and you should now have your data exported as an XML file by the name above on your Desktop.  You can quit KeePass2 now if you wish.
+and select the KeePass XML (2.x) format.  In the File: Export to: section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your Desktop folder, and in the File name area, enter the name keepass2_export.xml (the remainder of these instructions will assume that name).  Click Save, and you should now have your data exported as an XML file by the name above on your Desktop.  You can quit KeePass 2 now if you wish.
 
 ### 3. Open Terminal.app or cmd.exe
 
@@ -67,9 +67,9 @@ On Windows, in the command shell, enter the command:
 
     perl keepass2_to_1p4.pl -v ..\keepass2_export.xml
 
-where keepass2_export.xml is the name you gave to your exported KeePass2 XML file.  The command line above assumes the script is in the folder onepassword-utilities/keepass2_to_1p4 on your Desktop and the exported KeePass2 XML text file is also on your Desktop.  Hit Enter after you've entered the command above.
+where keepass2_export.xml is the name you gave to your exported KeePass 2 XML file.  The command line above assumes the script is in the folder onepassword-utilities/keepass2_to_1p4 on your Desktop and the exported KeePass 2 XML text file is also on your Desktop.  Hit Enter after you've entered the command above.
 
-The script only reads the file you exported from KeePass2, and does not touch your original KeePass2 data file, nor does it send any data anywhere.  Since the script is readable by anyone, you are free and welcome to examine the script and ask questions should you have any concerns.
+The script only reads the file you exported from KeePass 2, and does not touch your original KeePass 2 data file, nor does it send any data anywhere.  Since the script is readable by anyone, you are free and welcome to examine the script and ask questions should you have any concerns.
 
 ### 5. Import CSV into 1Password
 
@@ -79,7 +79,7 @@ If all went well, you should now have up to one or more new .csv files on your D
 
 and at the bottom of the dialog, set the File Format to Comma Delimited Text (.csv).  Notice now the Import As pulldown has appeared.  You’ll have to do one import for each type that 1Password 4 currently allows: Login, Credit Cards, Software License, and Secure Notes.  Select one type and match it to the corresponding, newly-created import file (the names should be pretty obvious).  Although the file is greyed out, it will still be selected.
 
-1Password 4 will indicate how many records were imported, and if the import is successful, all your KeePass2 records for the specific type will be imported.  These may require some clean-up, as some fields do not (currently) map into 1Password 4 directly, or may be problematic (certain date fields, for example, or KeePass2's Groups).  However, all unmapped fields will be pushed to the card's Notes field, so the data will be available for you inside 1Password 4.  Your KeePass2 Groups will be listed under Notes with the label Group: and the group hierarchy is shown as a colon-separated list.
+1Password 4 will indicate how many records were imported, and if the import is successful, all your KeePass 2 records for the specific type will be imported.  These may require some clean-up, as some fields do not (currently) map into 1Password 4 directly, or may be problematic (certain date fields, for example, or KeePass's Groups).  However, all unmapped fields will be pushed to the card's Notes field, so the data will be available for you inside 1Password 4.  Your KeePass 2 Groups will be listed under Notes with the label Group: and the group hierarchy is shown as a colon-separated list.
 
 ### 6. Securely Remove Exported Data
 
@@ -101,7 +101,11 @@ The folder "Text" inside contains the Text::CSV conversion module used by the sc
 
 ### Alternate Download Locations
 
-This script is available at from the 1Password Discussions forum, as well as other download locations. We recommend only downloading from this GitHub repository.
+This script is available from the 1Password Discussions forum and other download locations. We recommend downloading only from this GitHub repository.
+
+### Watchtower
+
+The "modified date" of imported items will be recorded as the time and date they were imported. For that reason, 1Password’s Watchtower service will not be able to accurately assess these items' vulnerability. If you have not recently changed the passwords for your imported items, we recommend visiting [our Watchtower page](https://watchtower.agilebits.com/) and entering the URLs, one at a time, to check for vulnerabilities.
 
 ## Special Thanks
 

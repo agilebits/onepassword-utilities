@@ -1,6 +1,6 @@
 # Importing Clipperz Data into 1Password
 
-The script clipperz_to_1p4.pl will convert a clipperz json text export file export into a 1PIF format that can be imported into 1Password 4.  By default, the script will create a .1pif file, as the .1pif format has superior importing capabilities.
+The script clipperz_to_1p4.pl will convert a Clipperz JSON text export file export into a 1PIF format that can be imported into 1Password 4.  By default, the script will create a .1pif file, as the .1pif format has superior importing capabilities.
 
 ## Requirements
 
@@ -93,11 +93,11 @@ The included folders "Text" and "UUID" contain the Text::CSV and UUID::Tiny modu
 
 ### Alternate Download Locations
 
-This script is available at from the 1Password Discussions forum, as well as other download locations. We recommend only downloading from this GitHub repository.
+This script is available from the 1Password Discussions forum and other download locations. We recommend downloading only from this GitHub repository.
 
-### Default Values
+### Watchtower
 
-This converter by default sets the Created date for each imported item to 1/1/2000.  This allows 1Password's Watchtower service the ability to flag potentially vulnerabile sites (i.e. for the Heartbleed security issue).  Unfortunately, there is no way for the converter, and hence 1Password to know if you have already changed your password on a given site.  This converter errors on the side of allowing 1Password's Watchtower server the ability to at least warn you of a site's previous vulnerability so that you can act accordingly.  If you have already changed all of the potentially vulnerable passwords for your logins, you can include the --nowatchtower option on the command line to cause the converter to not set the records Created time, and no Watchtower vulnerabilities will be shown after import.
+This converter by default sets the Created date for each imported item to 1/1/2000.  This allows 1Password's Watchtower service the ability to flag potentially vulnerable sites (e.g. for the Heartbleed security issue).  Unfortunately, there is no way for the converter, and hence 1Password, to know if you have already changed your password on a given site.  This converter errs on the side of allowing 1Password's Watchtower server the ability to at least warn you of a site's previous vulnerability so that you can act accordingly.  If you have already changed all of the potentially vulnerable passwords for your logins, you can include the `--nowatchtower` option on the command line to cause the converter to not set the records Created time, and no Watchtower vulnerabilities will be shown after import.
 
 ## Special Thanks
 

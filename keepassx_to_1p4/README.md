@@ -37,7 +37,7 @@ You do not need to install the documentation or example scripts.  Allow the inst
 
 ### 2. Export KeePassX Data
 
-Launch KeePassX, and export its databse to a text file using the menu item:
+Launch KeePassX, and export its database to a text file using the menu item:
 
     File > Export to > KeePassX XML File...
 
@@ -101,7 +101,11 @@ The folder "Text" inside contains the Text::CSV conversion module used by the sc
 
 ### Alternate Download Locations
 
-This script is available at from the 1Password Discussions forum, as well as other download locations. We recommend only downloading from this GitHub repository.
+This script is available from the 1Password Discussions forum and other download locations. We recommend downloading only from this GitHub repository.
+
+### Watchtower
+
+The "modified date" of imported items will be recorded as the time and date they were imported. For that reason, 1Password’s Watchtower service will not be able to accurately assess these items' vulnerability. If you have not recently changed the passwords for your imported items, we recommend visiting [our Watchtower page](https://watchtower.agilebits.com/) and entering the URLs, one at a time, to check for vulnerabilities.
 
 ## Special Thanks
 
