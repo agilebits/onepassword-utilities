@@ -1,6 +1,6 @@
 # Importing LastPass Data into 1Password
 
-The script lastpass_to_1p4.pl will convert a LastPass CSV text file export into a 1PIF format that can be imported into 1Password 4 for Mac or Windows.
+The script lastpass_to_1p4.pl will convert a LastPass CSV text file export into a 1PIF format that can be imported into 1Password for Mac or Windows. 1Password 5 for Mac includes a much-improved built-in LastPass importer, so please use that instead of this script if you are using 1Password 5.
 
 ## Requirements
 
