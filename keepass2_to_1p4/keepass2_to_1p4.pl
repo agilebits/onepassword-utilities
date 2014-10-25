@@ -1,8 +1,10 @@
 #!/usr/bin/perl
 
-# Converts a KeePass2 XML export into a CSV file for consumption into 1P4
+# Converts a KeePass2 XML export into PIF format for importing into 1P4
 #
 # http://discussions.agilebits.com/discussion/24909/keepass2-converter-for-1password-4
+#
+# Copyright 2014 Mike Cappella
 
 use v5.14;
 use strict;
@@ -14,13 +16,23 @@ use Getopt::Long;
 use File::Basename;
 use XML::Parser;
 use HTML::Entities;
-use Text::CSV;
+use JSON::PP;
+use UUID::Tiny ':std';
 #use Data::Dumper;
 
-my $version = "1.0";
+my $version = "2.0";
 
 my ($verbose, $debug);
 my $progstr = basename($0);
+
+my %typeMap = (
+    login =>		'webforms.WebForm',
+    note =>		'securenotes.SecureNote',
+);
+
+my %supported_types;
+$supported_types{$_}++ for keys %typeMap;
+my $supported_types = join ' ', sort keys %typeMap;
 
 sub Usage {
     my $exitcode = shift;
@@ -28,18 +40,24 @@ sub Usage {
     <<ENDUSAGE, "\nStopped";
 Usage: $progstr <options> <keepassx_export_file.xml>
     options:
-    --debug       | -d				# enable debug output
-    --help	  | -h				# output help and usage text
-    --outfile     | -o <converted.csv>		# use file named converted.csv as the output file
-    --type        | -t <type>			# login,creditcard,software,note
-    --verbose     | -v				# output operations more verbosely
+    --debug           | -d			# enable debug output
+    --help	      | -h			# output help and usage text
+    --outfile         | -o <converted.1pif>     # use file named converted.1pif as the output file
+    --sparselogin     | -s                      # create login type when at least username or password exists
+    --type            | -t <type list>          # comma separated list of one or more types from list below
+    --verbose         | -v			# output operations more verbosely
+    --[no]watchtower  | -w                      # set each card's creation date to trigger WatchTower checks (default: on)
+
+    supported types:
+	- $supported_types
 ENDUSAGE
     exit $exitcode;
 }
 
 my @save_ARGV = @ARGV;
 my %opts = (
-    outfile => join('/', $^O eq 'MSWin32' ? $ENV{'HOMEPATH'} : $ENV{'HOME'}, 'Desktop', '1P4_import.csv'),
+    outfile => join('/', $^O eq 'MSWin32' ? $ENV{'HOMEPATH'} : $ENV{'HOME'}, 'Desktop', '1P4_import'),
+    watchtower => 1,
 ); 
 
 sub debug {
@@ -59,8 +77,10 @@ my @opt_config = (
 	'debug|d'	 => sub { debug_on() },
 	'help|h'	 => sub { Usage(0) },
 	'outfile|o=s',
+	'sparselogin|s',
 	'type|t=s',
 	'verbose|v'	 => sub { verbose_on() },
+	'watchtower|w!'  => sub { $opts{$_[0]} = $_[1] },
 );
 
 {
@@ -70,16 +90,23 @@ GetOptions(\%opts, @opt_config) or Usage(1);
 }
 
 debug "Command Line: @save_ARGV";
-
-if (exists $opts{'type'} and ! $opts{'type'} ~~ /^(?:login|software|creditcard|note)$/) {
-    die "Invalid argument to --type: use one of login, software, creditcard, note.\nStopped";
-}
-
-if ($opts{'outfile'} !~ /\.csv$/i) {
-    $opts{'outfile'} = join '.', $opts{'outfile'}, 'csv';
-}
-
 @ARGV == 1 or Usage(1);
+
+if (exists $opts{'type'}) {
+    my %t;
+    for (split /\s*,\s*/, $opts{'type'}) {
+	unless (exists $supported_types{$_}) {
+	    Usage 1, "Invalid --type argument '$_'; see supported types.";
+	}
+	$t{$_}++;
+    }
+    $opts{'type'} = \%t;
+}
+
+my $file_suffix = '1pif';
+if ($opts{'outfile'} !~ /\.${file_suffix}$/i) {
+    $opts{'outfile'} = join '.', $opts{'outfile'}, $file_suffix;
+}
 
 my $file = shift;
 
@@ -92,25 +119,11 @@ my @group;		# current group hierarchy
 my $currentkey;		# the current key name being parsed
 my $collecting = 1;	# is the parser currently collecting data?
 
-my %sortorders = (
-    login	=> [ qw/title url username password notes/ ],
-    creditcard	=> [ qw/title cardnumber cardexpires cardholder cardpin cardbank cardcvv notes/ ],
-    software	=> [ qw/title version licensekey ownername owneremail ownercompany downloadlink publisher publisherURL retailprice supportemail purchasedate ordernumber notes/ ],
-    note	=> [ qw/title notes/ ],
-);
-
 my @gCards;
-my ($Cards, $numcards) = import_data($file);
-verbose "Imported $numcards card", $numcards > 1 || $numcards == 0 ? 's' : '';
+my $Cards = import_xml($file);
+export_pif($Cards);
 
-for my $type (keys %$Cards) {
-    next if exists $opts{'type'} and lc($type) ne $opts{'type'};
-    my $n = scalar @{$Cards->{$type}};
-    verbose "Exporting $n $type item", $n > 1 ? 's' : '';
-    export_csv($Cards->{$type}, $type);
-}
-
-sub import_data {
+sub import_xml {
     my $file = shift;
 
     my $parser = new XML::Parser(ErrorContext => 2);
@@ -128,53 +141,97 @@ sub import_data {
     @gCards or
 	die "No entries detected\n";
 
-    my %Cards;
+    my ($n, %Cards);
     for my $card (@gCards) {
 	my $type = 'note';
 
 	$type = 'login' if exists $card->{'username'} and exists $card->{'password'};
+	$type = 'login' if exists $opts{'sparselogin'} and (exists $card->{'username'} or exists $card->{'password'});
 
 	push @{$Cards{$type}}, $card;
+	$n++;
     }
-    return (\%Cards, scalar @gCards);
+    verbose "Imported $n card", $n > 1 || $n == 0 ? 's' : '';
+    return \%Cards;
 }
 
+sub export_pif {
+    my $cardlist = shift;
 
-sub export_csv {
-    my ($cardlist, $type) = @_;
+    #open my $outfh, ">:encoding(utf8)", $opts{'outfile'} or
+    open my $outfh, ">", $opts{'outfile'} or
+	die "Cannot create 1pif output file: $opts{'outfile'}\n$!\nStopped";
 
-    my $csv = Text::CSV->new ( { binary => 1, sep_char => ',' } );
-    (my $file = $opts{'outfile'}) =~ s/\.csv$/_$type.csv/;
-    open my $outfh, ">:encoding(utf8)", $file
-	or die "Cannot create output file: $file\n$!\nStopped";
-
-    for my $card (@$cardlist) {
-	my @row;
-	for my $col (@{$sortorders{$type}}) {
-	    my ($import_name, $export_name) = split '=', $col;
-	    my $field_name = $export_name || $import_name;
-	    if (exists $card->{$field_name}) {
-		push @row, $card->{$field_name};
-		delete $card->{$field_name};
-	    }
-	    else {
-		push @row, '';
-	    }
+    # href, key, k, n, t, v, a
+    sub field_knta {
+	my $h = shift, my $k = shift;
+	my $sc;
+	if (ref $h eq 'ARRAY') {
+	    $sc = $h->[1]; $h = $h->[0];
 	}
+	return undef unless exists $h->{$k};
 
-	delete $card->{'icon'};
-	debug "Extra keys (to notes): ", map { "$_: $card->{$_}\n" } keys %$card;
-	if ($row[-1] ne '') {
-	    $row[-1] .= "\n\n";
+	my $href = { 'k' => shift, 'n' => shift, 't' => shift, 'v' => $h->{$k} };
+	$href->{'a'} = { @_ }	if @_;
+	$sc->{$href->{'n'}} = $h->{$k}	if defined $sc;
+	delete $h->{$k};
+	return $href;
+    }
+    sub new_section {
+	my ($var, $key, $name, $title) = (shift, shift, shift, shift);
+	my @a;
+	for (@_) {
+	    push @a, $_ if defined $_;
 	}
-	$row[-1] .= join ': ', 'Group', $card->{'group'};
-	delete $card->{'group'};
-	$row[-1] .= "\n$_: $card->{$_}" for keys %$card;
-	$csv->combine(@row) or die "Failed to combine card fields into a CSV string\nStopped";
-	print $outfh $csv->string(), "\r\n";
-	debug $csv->string();
+	scalar @a and push @{$var->{$key}{'sections'}}, { name => $name, title => $title, fields => [ @a ] };
+    }
+
+    for my $type (keys %$cardlist) {
+	next if exists $opts{'type'} and not exists $opts{'type'}{lc $type};
+	my $n = scalar @{$cardlist->{$type}};
+	verbose "Exporting $n $type item", ($n > 1 || $n == 0) ? 's' : '';
+
+	for my $card (@{$cardlist->{$type}}) {
+	    my (%f, $ret);
+	    $f{'typeName'} = $typeMap{$type} // $typeMap{'note'};
+
+	    if (exists $card->{'title'}) { $f{'title'} = $card->{'title'}; delete $card->{'title'}; }
+	    if (exists $card->{'group'}) { push @{$f{'openContents'}{'tags'}}, $card->{'group'}; delete $card->{'group'}; }
+
+	    # logins and notes have a different format than other 1P4 entries, and this works as a nice catch all
+	    if (exists $card->{'username'}) {
+		push @{$f{'secureContents'}{'fields'}}, { designation => 'username', name => 'Username', type => 'T', value => $card->{'username'} };
+		delete $card->{'username'};
+	    }
+	    if (exists $card->{'password'}) {
+		push @{$f{'secureContents'}{'fields'}}, { designation => 'password', name => 'Password', type => 'P', value => $card->{'password'} };
+		delete $card->{'password'};
+	    }
+	    if (exists $card->{'url'}) {
+		$f{'location'} = $card->{'url'};
+		push @{$f{'secureContents'}{'URLs'}}, { label => 'website', url => $card->{'url'} };
+		delete $card->{'url'};
+	    }
+
+	    if (exists $card->{'notes'}) {
+		$f{'secureContents'}{'notesPlain'} = ref($card->{'notes'}) eq 'ARRAY' ? join("\n", @{$card->{'notes'}}) : $card->{'notes'};
+		delete $card->{'notes'};
+	    }
+	    for (keys %$card) {
+		warn "Unmapped card field pushed to Notes: $_\n" if $_ ne 'favorite';
+		$f{'secureContents'}{'notesPlain'} .= join ': ', "\n" . ucfirst $_, $card->{$_};
+	    }
+
+	    ($f{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM(), 'cappella.us')) =~ s/-//g;
+	    # set the creaated time to 1/1/2000 to help trigger WatchTower checks, unless --nowatchtower was specified
+	    $f{'createdAt'} = 946713600		if $opts{'watchtower'};
+
+	    my $encoded = encode_json \%f;
+	    print $outfh $encoded, "\n", '***5642bee8-a5ff-11dc-8314-0800200c9a66***', "\n";
+	}
     }
     close $outfh;
+
 }
 
 # handlers below
