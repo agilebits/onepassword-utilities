@@ -6,9 +6,9 @@ A huge hat tip to [@MrC](https://discussions.agilebits.com/profile/77142/MrC) fo
 
 ## Downloading
 
-[Download this repository](https://github.com/AgileBits/onepassword-utilities/archive/master.zip) and unzip it on your Desktop.
+[Download the 1Password utilities (master.zip)](https://github.com/AgileBits/onepassword-utilities/archive/master.zip) and unzip the file on your Desktop.
 
-The README for the convert_to_1p4 utility assumes you have the onepassword-utilities folder on your Desktop.
+The instructions in the README for the convert_to_1p4 utility assume you have the onepassword-utilities folder on your Desktop.
 
 ## Contributing Your Utility
 
