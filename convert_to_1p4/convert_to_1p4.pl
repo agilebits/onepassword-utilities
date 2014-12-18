@@ -18,7 +18,7 @@ use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.00";
+my $version = "1.01";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -59,7 +59,7 @@ for (qw/imp exp/) {
 }
 
 our %opts = (
-    outfile => join('/', $^O eq 'MSWin32' ? $ENV{'HOMEPATH'} : $ENV{'HOME'}, 'Desktop', '1P4_import'),
+    outfile => join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P4_import'),
     watchtower => 1,
 ); 
 
@@ -94,6 +94,7 @@ debug "Command Line: @save_ARGV";
 @ARGV == 1 or Usage(1, "Missing export_text_file name - please specify the file to convert");
 
 $opts{'outfile'} .= ".1pif"	if not $opts{'outfile'} =~ /\.1pif$/i;
+debug "Output file: ", $opts{'outfile'};
 
 for my $impexp (qw/imp exp/) {
     if (exists $opts{$impexp . 'types'}) {

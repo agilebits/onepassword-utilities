@@ -1,0 +1,22 @@
+Version 1.01:
+  - Fix: More precisely construct the path to the Desktop on Windows, for the 1PIF export file, and add some debug output
+    to help in any future issues.
+  - New: Update SafeWallet converter to support the Windows 3.x XML version, and new categories 'irc' and 'server'.
+  - Fix: SplashID converter was mishandling two or more adjacent F records.
+  - Info: SplashID export encoding is suspect - added commented out decoding line in code to help users try alternate
+    decoding (UTF-8 vs. macroman).
+  - Change: Updated documentation to switch from ActivePerl to Strawberry Perl, since ActiveState removed 5.16 from their
+    free downloads.
+
+Version 1.00:
+  - Initial release of password manager module-based converter which consolidates previous converters into a single utility.
+  - Outputs converted data to 1Password's robust 1PIF format.
+  - Obsoletes CSV exporter available in previous converters.
+  - Several new converters added.
+  - Single, comprehensive README file.
+  - Generalized 1PIF creation module, supports adding customized sections and fields to entries.
+  - Table-driven password manager type/field recognizer, supports import record retyping and splitting.
+  - Supports selection of both import and export types.
+  - Lossless date-type handling, where sensible; unexpected, lossy, or nonsense dates are retained in notes.
+  - Many improvements and enhancements to previous conveters.
+  - All converters tested/retested on OS X and Windows (where relevant).

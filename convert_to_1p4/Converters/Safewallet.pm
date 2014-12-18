@@ -156,6 +156,12 @@ my %card_field_specs = (
 	[ '_lastname',		0, qr/^Last Name$/ ],		# see post_process_normalized
 	[ 'membership_no',	0, qr/^ID$/ ],
     ]},
+    irc =>			{ textname => undef, type_out => 'server', fields => [
+	[ 'url',		1, qr/^BNC Server$/ ],
+	[ 'username',		1, qr/^User\/Ident$/ ],
+	[ 'password',		1, qr/^Password$/ ],
+	[ 'ircport',		0, qr/^Port$/ ],
+    ]},
     insurance =>		{ textname => undef, type_out => 'membership', fields => [
 	[ 'org_name',		0, qr/^Company$/ ],
 	[ 'polid',     		0, qr/^Policy #$/ ],
@@ -232,6 +238,11 @@ my %card_field_specs = (
 	[ 'snpurchasedate',	1, qr/^Purchase Date$/ ],
 	[ 'snwebsite',		0, qr/^Web-Site$/ ],
     ]},
+    server =>			{ textname => undef, type_out => 'server', fields => [
+	[ 'url',		1, qr/^IP$/ ],
+	[ 'ircport',		0, qr/^Port$/ ],
+	[ 'username',		1, qr/^RCON$/ ],
+    ]},
     socialsecurity =>           { textname => undef, fields => [
 	[ '_firstname',		0, qr/^First Name$/ ],		 # see post_process_normalized
 	[ '_lastname',		0, qr/^Last Name$/ ],		 # see post_process_normalized
@@ -273,11 +284,11 @@ sub do_import {
 
     my $xp = XML::XPath->new(xml => $_);
 
-    my $cardnodes = $xp->findnodes('//Card[@Caption]');
+    my $cardnodes = $xp->findnodes('//Card[@Caption] | //T4[@Caption]');
     foreach my $cardnode (@$cardnodes) {
 	my (@card_tags, @groups);
 
-	for (my $node = $cardnode->getParentNode(); $node->getName() eq 'Folder'; $node = $node->getParentNode()) {
+	for (my $node = $cardnode->getParentNode(); $node->getName() =~ /^Folder|T3$/; $node = $node->getParentNode()) {
 	    my $v = $node->getAttribute("Caption");
 	    unshift @groups, $v   unless $v eq '';
 	}
@@ -299,15 +310,16 @@ sub do_import {
 	    push @card_tags, 'Favorite'
 	}
 
-	if (my $fieldnodes = $xp->findnodes('Property', $cardnode)) {
+	if (my $fieldnodes = $xp->findnodes('*', $cardnode)) {
 	    my $fieldindex = 1;;
 	    foreach my $fieldnode (@$fieldnodes) {
+		next if $fieldnode->getName() !~ /^Property|T\d+$/;
 		# handle blank field labels;  type Note has none by default, but labels can be blanked by the user
 		my $f = $fieldnode->getAttribute("Caption") || 'Field_' . $fieldindex;
-		my $t = $fieldnode->getAttribute("Type");
+		my $t = $fieldnode->getAttribute("Type") || $fieldnode->getName();
 		my $v = $fieldnode->string_value;
 		debug "\t\tfield: $f($t) -> $v";
-		if ($t eq 'Note') {
+		if ($t =~ /^Note|T267$/) {
 		    if ($v ne '') {
 			push @card_notes, $f eq 'Note' ? $v : join ': ', $f, $v;
 		    }
@@ -525,12 +537,13 @@ sub by_test_order {
 
 # Date converters
 # Safewallet validates date input on Date types
-#    OS X:	 yyyy-mm-dd hh:mm:ss
+#    SafeWallet 2:	 yyyy-mm-dd hh:mm:ss
+#    SafeWallet 3:	 yyyymmddhhmmss
 sub parse_date_string {
     local $_ = $_[0];
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
 
-    if (/^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})\s/) {	# yyyy-mm-dd
+    if (/^(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})(?:\s|\d)/) {	# yyyy-mm-dd or yyyymmdd
 	my $m = sprintf "%02d", $+{'m'};
 	my $d = sprintf "%02d", $+{'d'};
 	if (check_date($+{'y'}, $m, $d)) {

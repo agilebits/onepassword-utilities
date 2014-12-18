@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Splashid 1.00;
+package Converters::Splashid 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -152,10 +152,14 @@ sub do_import {
 	    quote_char => '"',
     });
 
+
     # Encoding is done using the MacRoman encoding scheme, even on Windows.  Neither the SplashID Windows app as of
     # version 7.2.4 (April 2014), nor the Web App, shows the correct decoding; the Windows app botches the characters,
-    # and the web app seems to suppress output altogether.
-    open my $io, "<:encoding(macroman)", $file
+    # and the web app seems to suppress output altogether.  Furthermore, it seems encoding switches on a row-by-row basis.
+    #
+    # XXX: yuck - see https://discussions.agilebits.com/discussion/comment/153882/#Comment_153882
+    #open my $io, "<:encoding(macroman)", $file
+    open my $io, "<:encoding(UTF-8)", $file
 	or bail "Unable to open VID file: $file\n$!";
 
     # Verify (CSV hybrid) VID 3.0 or 4.0 from the first line for the export file
@@ -229,7 +233,8 @@ sub do_import {
 
 	    # The last item in @labels and @values is a bit field value indicating which fields 1 to 10 are masked.
 	    # Ignore it for now.
-	    pop @labels; pop @values;
+	    pop @labels		if @labels ne 10;
+	    pop @values;
 
 	    # vID 4.0 file includes the attachment's original filename, encryption key, and attachment's file name
 	    if ($vid_version eq '4.0') {
@@ -289,8 +294,6 @@ sub do_import {
 
 	    $card_title = join ': ', $card_type, $card_title;
 	}
-
-	1;
 
 	# a few cleanups and flatten notes
 	my $card_notes = myjoin "\n\n", map { myjoin "\n", @$_ } @card_notes;
