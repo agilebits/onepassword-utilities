@@ -18,7 +18,7 @@ The following password management programs are currently supported:
 ## Requirements
 
 The script is a Perl script.  You will run it in a command shell under OS X using the
-**Terminal** application or under Windows using the **cmd.exe** command shell.
+**Terminal** application or under Windows using the command shell.
 
 ### OS X
 - 1Password for Mac, version 4.0 or higher
@@ -26,7 +26,7 @@ The script is a Perl script.  You will run it in a command shell under OS X usin
 ### Windows
 
 - 1Password for Windows, version 4.1.0.520 or higher
-- [ActivePerl](http://www.activestate.com/activeperl/downloads) version 5.16 (*not* 5.18)
+- [Strawberry Perl](http://strawberryperl.com/releases.html) version 5.16.3.1 (*not* 5.18 or later)
 
 ### Password Manager Version Requirements
 
@@ -50,7 +50,7 @@ The following list of password managers indicate the software version and platfo
 
 * Safe in Cloud: OS X: 1.6; Windows: 2.8
 
-* SafeWallet: OS X 1.2; Windows: 2.4.1.2
+* SafeWallet: OS X 1.2; Windows: 2.4.1.2, 3.0.7
 
 * SplashID Safe: OS X: 7.2.2; Windows: 7.2.4
 
@@ -67,9 +67,8 @@ you are using an earlier version, you will need to update 1Password to properly 
 
 OS X includes Perl, so no additional software is required.
 
-Windows users will need to download and install ActivePerl for the OS type.  Select either the  [32-bit](http://downloads.activestate.com/ActivePerl/releases/5.16.3.1604/ActivePerl-5.16.3.1604-MSWin32-x86-298023.msi) or the  [64-bit](http://downloads.activestate.com/ActivePerl/releases/5.16.3.1604/ActivePerl-5.16.3.1604-MSWin32-x64-298023.msi) version of ActivePerl.  You do not need to install the documentation or example scripts.  Allow the installer to modify your
-PATH (otherwise you will need to specify the full path to the perl program below).  When you are
-done with the conversion, you may uninstall ActivePerl.  Some additional modules are required, and installations instructions are noted in Step 2 below.
+Windows users will need to download the portable version of Strawberry Perl.  Select the appropriate  [32-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-64bit-portable.zip) version of Strawberry Perl.  When you are
+done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installations instructions are noted in Step 2 below.
 
 ### 2. Open the Command Line Shell
 
@@ -80,16 +79,23 @@ it under Applications).  When a Terminal window opens, type (or better still, co
 
 and hit Enter.
 
-On Windows, start the command shell by going to the Start menu, and entering **cmd.exe** in the *Search
-programs and files box*, and hit Enter.  When the cmd.exe command line window opens, type:
+On Windows, perform the following steps:
 
-    cd Desktop\onepassword-utilities\convert_to_1p4
+  * __2a.__ unzip the Strawberry Perl archive and place the unzipped archive as the folder: `C:\myperl` (right click the archive, Extract All, and enter `C:\myperl` as the Destination path). When the unzip has completed, you can delete the zip file.  
+   
+  * __2b.__ Enter the following command into Window's __Search programs and files__ box `C:\myperl\portableshell.bat` and hit Enter. This will open a command window with the required PATH variables set.
 
-and hit Enter.  You are advised to increase the width and height of the *cmd.exe* window - it is very small by default.  Right-click its titlebar, select Properties, and set the Window Size to 100 x 90 (width x height).
+The following one-time commands will be entered into the just-opened command line window (copy and paste is the best method - to paste, right-click in the command line window).  You can skip to step 2f if you've already installed the modules successfully:
 
-Some additional modules are required for Windows users - the commands below only need to be run once, after you've installed ActivePerl.  In the **cmd.exe** window, type the following command and hit Enter:
+  * __2c.__ Enter the command `cpan Text::CSV` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
 
-    ppm install xml-xpath
+  * __2d__ Enter the command `cpan Date::Calc` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
+
+  * __2e.__ Enter the command `cpan XML::XPath` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
+
+The following command changes the working directory to the convert_to_1p4 directory you placed on your Desktop:
+
+  * __2f.__ Enter the command `cd %USERPROFILE%\Desktop\onepassword-utilities\convert_to_1p4` and hit Enter.
 
 ### 3. Export Your Data
 
