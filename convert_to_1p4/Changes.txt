@@ -1,3 +1,13 @@
+Version 1.02:
+  - Change: Set default decoder for SplashID back to macroman.
+  - New: specifically support SplashID's 'Addressess' category (into Secure Notes).
+  - Fix: Converter keepass2 was incorrectly splitting a group name that contained certain XML-reserved characters.
+  - Fix: README updates: clarify LastPass export instructions; enumerate and better describe Step 4; clarify
+    that attachments are not unsupported; describe a workflow for creating Folders from tagged values; remove extra
+    subdirectory layer onepassword-utilities, and instruct users to place convert_to_1p4 directly onto the Desktop.
+  - Change: The README file eliminates the extra folder layer onepassword-utilities and instead refers to the
+    convert_to_1p4 folder.
+
 Version 1.01:
   - Fix: More precisely construct the path to the Desktop on Windows, for the 1PIF export file, and add some debug output
     to help in any future issues.

@@ -18,7 +18,7 @@ use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.01";
+my $version = "1.02";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;

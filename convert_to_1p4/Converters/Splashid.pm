@@ -25,6 +25,18 @@ use Text::CSV;
 # is not used, but remains for code-consisency with other converter modules.
 #
 my %card_field_specs = (
+    addressses =>		{ textname => 'Addresses', type_out => 'note', fields => [
+	[ 'addr_name',		0, 'Name' ],
+	[ 'addr_addr1',		0, 'Address', ],
+	[ 'addr_addr2',		0, 'Address 2', ],
+	[ 'addr_city',		0, 'City', ],
+	[ 'addr_state',		0, 'State', ],
+	[ 'addr_zip',		0, 'Zip Code', ],
+	[ 'addr_country',	0, 'Country', ],
+	[ 'addr_email',		0, 'Email', ],
+	[ 'addr_phone',		0, 'Phone', ],
+    ]},
+
     bankacct =>			{ textname => 'Bank Accounts', fields => [
 	[ 'accountNo',		0, 'Account #', ],
 	[ 'telephonePin',	0, 'PIN', ],
@@ -158,8 +170,8 @@ sub do_import {
     # and the web app seems to suppress output altogether.  Furthermore, it seems encoding switches on a row-by-row basis.
     #
     # XXX: yuck - see https://discussions.agilebits.com/discussion/comment/153882/#Comment_153882
-    #open my $io, "<:encoding(macroman)", $file
-    open my $io, "<:encoding(UTF-8)", $file
+    #open my $io, "<:encoding(UTF-8)", $file
+    open my $io, "<:encoding(macroman)", $file
 	or bail "Unable to open VID file: $file\n$!";
 
     # Verify (CSV hybrid) VID 3.0 or 4.0 from the first line for the export file
