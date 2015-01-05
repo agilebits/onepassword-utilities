@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepass2 1.00;
+package Converters::Keepass2 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -214,6 +214,7 @@ sub start_handler {
 	return if not $collecting;
 	if ($path =~ /::Group$/) {
 	    $xmldbg && debug "=== START GROUP";
+	    push @group, '';
 	}
 	elsif ($path =~ /::Group::Entry$/) {
 	    $xmldbg && debug "START ENTRY";
@@ -237,8 +238,8 @@ sub char_handler {
     return if not $collecting;
 
     if ($path =~ /::Group::Name$/) {
-	push @group, $data;
-	debug "\tGroup name: ==> '$data'";
+	$group[-1] .= $data;
+	debug "\tGROUP name: ==> '$group[-1]'";
     }
     elsif ($path =~ /::Group::Entry::String::Key$/) {
 	debug " **** current key: '$data'";

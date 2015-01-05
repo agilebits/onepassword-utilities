@@ -46,7 +46,7 @@ The following list of password managers indicate the software version and platfo
 
 * LastPass: LastPass is a browser-dependent extension, and various versions exist (version 3.1.54 Firefox/Windows tested) 
 
-* mSecure: OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (do not properly export CSV, has quoting / escaping issues)
+* mSecure: OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
 
 * Safe in Cloud: OS X: 1.6; Windows: 2.8
 
@@ -57,7 +57,7 @@ The following list of password managers indicate the software version and platfo
 ## Instructions
 
 The following instructions will guide you through the specifics required to export your wallet data, convert it, and import it into 1Password.  Instructions specific to either OS X or Windows will be noted below.  In addition, instructions specific to a given password manager will be noted in a separate section below.  Finally, these instructions assume you have
-placed the [onepassword-utilities](https://github.com/AgileBits/onepassword-utilities) folder onto your Desktop.
+placed the **convert_to_1p4** folder complete with its contents onto your Desktop.
 
 
 ### 1. Verify Requirements
@@ -75,7 +75,7 @@ done with the conversion, you may delete the extracted portable version of Straw
 On OS X, open **Terminal** (under `Applications > Utilities`, or type **Terminal.app** in Spotlight and select
 it under Applications).  When a Terminal window opens, type (or better still, copy and paste):
 
-    cd Desktop/onepassword-utilities/convert_to_1p4
+    cd Desktop/convert_to_1p4
 
 and hit Enter.
 
@@ -95,37 +95,57 @@ The following one-time commands will be entered into the just-opened command lin
 
 The following command changes the working directory to the convert_to_1p4 directory you placed on your Desktop:
 
-  * __2f.__ Enter the command `cd %USERPROFILE%\Desktop\onepassword-utilities\convert_to_1p4` and hit Enter.
+  * __2f.__ Enter the command `cd %USERPROFILE%\Desktop\convert_to_1p4` and hit Enter.
 
 ### 3. Export Your Data
 
-See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 4 when the data is exported.
+See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 4 when the data is exported.  Note that some password managers support attachments and may or may not support exporting these attachments.  Regardless, convert_to_1p4 does not support attachment conversion.
 
 ### 4. Execute the Perl Script
 
 You are about to convert your data.  The script only reads the file you exported from your password manager, and does not touch your password manager's original data file, nor does it transmit any data across a network.  Since the script is readable by anyone, you are free and welcome to examine it and ask any questions should you have any concerns.
 
-On OS X, in the Terminal window, enter the command:
+**Note**: The command below contains the generic term *converter_name* as a placeholder - when typing the command, instead of typing this generic *converter_name*, type the name of the desired converter.  The list of currently supported converters is:
 
-    perl convert_to_1p4.pl converter -v ../../pm_export.txt
+- clipperz
+- ewallet
+- handysafe
+- keepass2
+- keepassx
+- keychain
+- lastpass
+- msecure
+- safeincloud
+- safewallet
+- splashid
+
+The list of supported converters can also be output by using the `--help` option, for example:
+
+    perl convert_to_1p4.pl --help.
+
+Now, let's enter the proper conversion command.
+
+On OS X, in the Terminal window, enter the command (**Yosemite note**: replace the word `perl` below with `perl5.16`):
+
+
+    perl convert_to_1p4.pl converter_name -v ../../pm_export.txt
     
-**Yosemite note**: replace the `perl` command above with `perl5.16` (Yosemite ships with a newer version of Perl).
 
 On Windows, in the command shell, enter the command:
 
-    perl convert_to_1p4.pl converter -v ..\..\pm_export.txt
+    perl convert_to_1p4.pl converter_name -v ..\..\pm_export.txt
 
-where **converter** is the name of the appropriate converter (from the list at the top of these instructions, or as shown in the output when using `--help`).  Hit `Enter` after you've typed or copy/pasted the command above.  See **Note** below.
+Hit `Enter` after you've entered the correct command.  See **Note** below.
 
 The `-v` option will cause the script to indicate the number of records imported and converted (per type) to the 1PIF file. 
 
 **Note**: The command line above assumes that your Desktop contains:
 
 * the exported password manager text file **pm_export.txt** 
-* the folder `onepassword-utilities/convert_to_1p4` on OS X or
-* the folder `onepassword-utilities\convert_to_1p4` on Windows
+* the folder `convert_to_1p4` on OS X or
+* the folder `convert_to_1p4` on Windows
  
-and the `convert_to_1p4` folder contains the `convert_to_1p4.pl` script and all of its accompanying modules.
+and the `convert_to_1p4` folder contains the `convert_to_1p4.pl` script and all of its accompanying modules.  It also assumes you've replaced the generic term *converter_name* with the specific converter you need to do the conversion.
 
 ### 5. Import 1PIF into 1Password
 
@@ -296,7 +316,9 @@ OS X will prompt you to allow the action - press `Allow`.  You will have to do t
 
 Launch the browser you normally use with LastPass. From the LastPass browser extension, select `Tools > Advanced Tools > Export To > LastPass CSV File`, and when prompted, enter your LastPass vault password.  Navigate to your **Desktop** folder in the *Select a file to export to* dialog, and in the File name area, enter the name **pm_export.txt**, and click `Save`.
 
-Note: LastPass exports Form Fill Profiles separately.  When you have completed converting and importing the data you exported above, repeat the process from Step 3 onward, this time exporting your Form Fill Profiles using the `Tools > Advanced Tools > Export To > Form Fill Profiles` menu. 
+**Note**: In some cases, the LastPass exported data will open in a separate browser window, showing the contents of your LastPass data.  If this happens, select all of the data on the page (Cmd-A) and Copy it (Cmd-C). Open TextEdit, and go to the menu `TextEdit > Preferences`. In the New Document tab, under Format, select `Plain Text` and close that dialog. Open a new document (Cmd-N). Paste your data now (Cmd-V), and save it to your Desktop with the file name `pm_export.txt` and selecting `Unicode (UTF-8)` as the Plain Text Encoding.
+
+**Note**: LastPass exports Form Fill Profiles separately.  When you have completed converting and importing the data you exported above, repeat the process from Step 3 onward, this time exporting your Form Fill Profiles using the `Tools > Advanced Tools > Export To > Form Fill Profiles` menu. 
 
 ---
 
@@ -325,7 +347,7 @@ Navigate to your **Desktop** folder, and save the file with the name **pm_export
 ---
 
 ### ● SplashID Safe
-Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (Note: you cannot use the .txt suffix - your file will be named **pm_export.vld** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.vld** where appropriate).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
+Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: you cannot use the .txt suffix - your file will be named **pm_export.vld** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.vld** where appropriate).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
 
 ---
 
@@ -357,6 +379,8 @@ Some password management programs allow placement of items into groups or folder
 Likewise, any tags, favorite or star markers, when available for an entry, will become 1Password tags.
 
 Finally, other specific indicators may be placed into the 1Password entries notes section (e.g. Color: Red).
+
+To place a set of tagged 1Password entries into a folder, select a given tag and create an appropriately named folder for that tag.  With the Folder list expanded, and the tagged items selected, drag the items onto the folder name. 
 
 ---
 
