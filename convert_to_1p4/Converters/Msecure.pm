@@ -230,6 +230,8 @@ sub do_import {
 	my @card_notes = ([], [], []);
 	push @{$card_notes[2]},	$notes	 if $notes ne '';
 
+	my $card_folder = [ $card_tags ];
+
 	# When a user redefines an mSecure type, the card type and the field meanings are unknown.
 	# In this case (the type isn't available in %ll_typeMap), force the card type to 'note' and push
 	# to notes the values with generic labels prepended.
@@ -306,7 +308,7 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes);
+	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, $card_folder);
 
 	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	# common function used by all converters?
@@ -354,11 +356,12 @@ sub do_export {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $postprocess) = @_;
+    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	notes	=> $$notesref,
 	tags	=> $tags,
+	folder	=> $folder,
     );
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {

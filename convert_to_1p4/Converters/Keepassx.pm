@@ -89,7 +89,7 @@ sub do_import {
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \@fields, $card_title, $card_tags, \$card_note);
+	    my $normalized = normalize_card_data($itype, \@fields, $card_title, $card_tags, \$card_note, \@groups);
 
 	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	    # common function used by all converters?
@@ -135,11 +135,12 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $postprocess) = @_;
+    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	notes	=> defined $$notesref ? $$notesref : '',
 	tags	=> $tags,
+	folder	=> $folder,
     );
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {

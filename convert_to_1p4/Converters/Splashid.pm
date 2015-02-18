@@ -189,7 +189,7 @@ sub do_import {
     my ($n, $rownum) = (1, 1);
     my ($npre_explode, $npost_explode);
     my (@labels, @values, @labels_cust);
-    my ($card_type, $card_title, $card_tags, @card_notes);
+    my ($card_type, $card_title, $card_tags, @card_notes, $card_folder);
 
     while (my $row = $csv->getline ($io)) {
 	if ($row->[0] eq '' and @$row == 1) {
@@ -242,6 +242,8 @@ sub do_import {
 	    @values 	 = @$row[0..10];
 	    @labels_cust = @$row[(@{$vid_table{$vid_version}{'labels_cust_col'}})];
 	    push @labels_cust, '';		# adds an empty 10th label, which is where Date Mod is in Labels
+
+	    $card_folder = [ $card_tags ];
 
 	    # The last item in @labels and @values is a bit field value indicating which fields 1 to 10 are masked.
 	    # Ignore it for now.
@@ -312,7 +314,7 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes);
+	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, $card_folder);
 
 	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	# common function used by all converters?
@@ -359,11 +361,12 @@ sub do_export {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $postprocess) = @_;
+    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	notes	=> $$notesref,
 	tags	=> $tags,
+	folder	=> $folder,
     );
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {

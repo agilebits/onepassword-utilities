@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keychain 1.00;
+package Converters::Keychain 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -17,20 +17,23 @@ use warnings;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
+use Encode;
 use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin unfold_and_chop print_record);
 
 my $max_password_length = 50;
 
 my %card_field_specs = (
-    login =>                    { textname => undef, fields => [
+    login =>			{ textname => undef, fields => [
 	[ 'username',		0, qr/^username$/ ],
 	[ 'password',		0, qr/^password$/ ],
 	[ 'url',		0, qr/^url$/ ],
     ]},
+    note =>			{ textname => undef, fields => [
+    ]},
 );
 
-my %entry;
+my (%entry, $itype);
 
 # The following table drives transformations or actions for an entry's attributes, or the class or
 # data section (all are collected into a single hash).  Each ruleset is evaluated in order, as are
@@ -52,7 +55,8 @@ my @rules = (
 		{ c => sub { $_[0] =~ s/^"(.*)"$/$1/ } },
 		{ c => sub { $_[0] =~ /^Apple Persistent State Encryption$/ or 
 			     $_[0] =~ /^Preview Signature Privacy$/ or
-			     $_[0] =~ /^Safari Session State Key$/ }, action => 'SKIP',
+			     $_[0] =~ /^Safari Session State Key$/ or
+			     $_[0] =~ /^Call History User Data Key$/}, action => 'SKIP',
 		    msg => sub { debug "\t\tskipping non-password record: $entry{'CLASS'}: ", $_[0] } },
     ],
     srvr => [
@@ -77,7 +81,15 @@ my @rules = (
     cdat => [
 		{ c => sub { $_[0] =~ s/^0x\S+\s+"(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z.+"$/$1-$2-$3 $4:$5:$6/g } },
     ],
+    # desc must come before DATA so that 'secure note' type can be used as a condition in DATA below
+    desc => [
+		{ c => sub { $_[0] =~ s/^"(.*)"$/$1/; $itype = 'note' if $_[0] eq 'secure note'; $_[0] } },
+    ],
     DATA => [
+		# secure note data, early terminates rule list testing
+		{ c => sub { $itype eq 'note' and $_[0] =~ s/^.*<key>NOTE<\/key>\\012\\011<string>(.+?)<\/string>.*$/$1/ }, action => 'BREAK',
+		    msg => sub { debug "\t\tskipping non-password record: $entry{'CLASS'}: ", $entry{'svce'} // $entry{'srvr'} } },
+
 		{ c => sub { $_[0] !~ s/^"(.+)"$/$1/ }, action => 'SKIP',
 		    msg => sub { debug "\t\tskipping non-password record: $entry{'CLASS'}: ", $entry{'svce'} // $entry{'srvr'} } },
 		{ c => sub { $_[0] =~ /^[A-Z\d]{8}-[A-Z\d]{4}-[A-Z\d]{4}-[A-Z\d]{4}-[A-Z\d]{12}$/ }, action => 'SKIP',
@@ -87,7 +99,6 @@ my @rules = (
 		{ c => sub { join '', "\trecord: class = $entry{'CLASS'}: ", $entry{'svce'} // $entry{'srvr'} } },	# debug output only
     ],
 );
-
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
@@ -118,6 +129,7 @@ KEYCHAIN_ENTRY:
     while ($contents) {
 	if ($contents =~ s/\Akeychain: (.*?)\n+(?=$|^keychain: ")//ms) {
 	    local $_ = $1; my $orig = $1;
+	    $itype = 'login';
 
 	    $examined++;
 	    debug "Entry ", $examined;
@@ -141,6 +153,7 @@ KEYCHAIN_ENTRY:
 
 	    # run the rules in the rule set above
 	    # for each set of rules for an entry key...
+RULE:
 	    for (my $i = 0;  $i < @rules; $i += 2) {
 		my ($key, $ruleset) = ($rules[$i], $rules[$i + 1]);
 
@@ -163,6 +176,10 @@ KEYCHAIN_ENTRY:
 				($rule->{'msg'})->($entry{$key})		if exists $rule->{'msg'};
 				next KEYCHAIN_ENTRY;
 			    }
+			    elsif ($rule->{'action'} eq 'BREAK') {
+				debug "\t    breaking out of rule chain";
+				next RULE;
+			    }
 			}
 		    }
 
@@ -174,10 +191,25 @@ KEYCHAIN_ENTRY:
 		debug sprintf "\t    %-12s : %s", $_, $entry{$_}	if exists $entry{$_};
 	    }
 
+	    #my $itype = find_card_type(\%entry);
+
 	    my %h;
-	    $h{'password'}	= $entry{'DATA'};
-	    $h{'username'}	= $entry{'acct'}					if exists $entry{'acct'};
-	    $h{'url'}		= $entry{'ptcl'} . '://' . $entry{'srvr'} . $entry{'path'}	if exists $entry{'srvr'};
+	    my @notes = ();
+	    if ($itype eq 'login') {
+		$h{'password'}	= $entry{'DATA'};
+		$h{'username'}	= $entry{'acct'}						if exists $entry{'acct'};
+		$h{'url'}	= $entry{'ptcl'} . '://' . $entry{'srvr'} . $entry{'path'}	if exists $entry{'srvr'};
+	    }
+	    elsif ($itype eq 'note') {
+		# convert ascii string DATA, which contains \### octal escapes, into UTF-8
+		my $octets = encode("ascii", $entry{'DATA'});
+		$octets =~ s/\\(\d{3})/"qq|\\$1|"/eeg;
+		push @notes, decode("UTF-8", $octets);
+		1;
+	    }
+	    else {
+		die "Unexpected itype: $itype";
+	    }
 
 	    # will be added to notes
 	    $h{'modified'}	= $entry{'mdate'}					if exists $entry{'mdate'};
@@ -201,11 +233,10 @@ KEYCHAIN_ENTRY:
 	    }
 	    $dup_check{$s}++;
 
-	    my $itype = find_card_type(\%h);
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \%h, $sv, undef, \undef);
+	    my $normalized = normalize_card_data($itype, \%h, $sv, undef, \@notes);
 
 	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	    # common function used by all converters?
@@ -242,8 +273,11 @@ sub do_export {
 }
 
 sub find_card_type {
-    debug "\t\ttype defaulting to 'login'";
-    return 'login';
+    my $eref = shift;
+
+    my $type = (exists $eref->{'desc'} and $eref->{'desc'} eq 'secure note') ? 'note' : 'login';
+    debug "\t\ttype set to '$type'";
+    return $type;
 }
 
 # Place card data into normalized internal form.
@@ -257,10 +291,11 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $carddata, $title, $tags, $saved_notes, $postprocess) = @_;
+    my ($type, $carddata, $title, $tags, $notesref, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	tags	=> $tags,
+	notes   => $notesref,
     );
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {

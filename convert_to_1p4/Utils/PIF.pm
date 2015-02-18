@@ -68,6 +68,8 @@ our $k_address		= 'address';
 my $f_nums		= join('', "0" .. "9");
 my $f_alphanums		= join('', $f_nums, "A" .. "Z", "a" .. "z");
 
+my $gFolders		= {};		# global 1PIF folder tree for records mapping UUIDs to folder names
+
 my %pif_table = (
 	# n=key                 section			 k=kind         t=text label
     bankacct => [
@@ -315,6 +317,8 @@ sub create_pif_record {
 		}
 		elsif ($key eq 'url') {
 		    push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $cardh{$key}{'value'} };
+		    # Need to add Location field so that the item appears in 1Password for Windows' extension.
+		    $rec->{'location'} = $cardh{$key}{'value'};
 		}
 	    }
 	}
@@ -363,6 +367,12 @@ sub create_pif_record {
     if (exists $card->{'tags'}) {
 	push @{$rec->{'openContents'}{'tags'}}, ref($card->{'tags'}) eq 'ARRAY' ? (@{$card->{'tags'}}) : $card->{'tags'};
 	debug "  tags: ", unfold_and_chop ref($card->{'tags'}) eq 'ARRAY' ? join('; ', @{$card->{'tags'}}) : $card->{'tags'};
+    }
+
+    if ($main::opts{'folders'} and exists $card->{'folder'} and @{$card->{'folder'}}) {
+	add_to_folder_tree(\$gFolders, @{$card->{'folder'}});
+	my $uuid = uuid_from_path(\$gFolders, @{$card->{'folder'}});
+	$rec->{'folderUuid'} = $uuid	if defined $uuid;
     }
 
     # map any remaninging fields to notes
@@ -418,7 +428,59 @@ sub create_pif_file {
 	verbose "Exported $n $type item", pluralize($n);
     }
     verbose "Exported $ntotal total item", pluralize($ntotal);
+
+    if ($gFolders) {
+	output_folder_records($outfh, $gFolders, undef);
+    }
     close $outfh;
+}
+
+sub add_to_folder_tree {
+    my ($folder_tree, $folder_name) = (shift, shift);
+
+    return unless defined $folder_name;
+    if (exists $$folder_tree->{$folder_name}) {
+	add_to_folder_tree(\$$folder_tree->{$folder_name}{'children'}, @_);
+    }
+    else {
+	# create new folder_tree node
+	$$folder_tree->{$folder_name}{'children'} = {};
+	($$folder_tree->{$folder_name}{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM(), 'cappella.us')) =~ s/-//g;
+	if (@_) {
+	    add_to_folder_tree(\$$folder_tree->{$folder_name}{'children'}, @_);
+	}
+    }
+}
+
+sub uuid_from_path {
+    my $folder_tree = shift;
+
+    while (my $folder_name = shift @_) {
+	return undef if ! exists $$folder_tree->{$folder_name};
+	if (@_) {
+	    $folder_tree = \$$folder_tree->{$folder_name}{'children'};
+	}
+	else {
+	    return $$folder_tree->{$folder_name}{'uuid'};
+	}
+    }
+    return undef;
+}
+
+
+sub output_folder_records {
+    my ($outfh, $f, $parent_uuid) = @_;
+    return unless defined $f;
+    for (keys %$f) {
+	my $frec = {
+		uuid => $f->{$_}{'uuid'},
+		title => $_,
+		typeName => 'system.folder.Regular'
+	    };
+	$frec->{'folderUuid'} = $parent_uuid	if defined $parent_uuid;
+	print $outfh encode_json($frec), "\n", '***5642bee8-a5ff-11dc-8314-0800200c9a66***', "\n";
+	output_folder_records($outfh, $f->{$_}{'children'}, $f->{$_}{'uuid'})	if $f->{$_}{'children'};
+    }
 }
 
 sub add_new_field {
@@ -510,7 +572,7 @@ sub explode_normalized {
     my (%oc, $nc);
     # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
     if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes/) {
+	for (qw/title tags notes folder/) {
 	    # trigger the for() loop below
 	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
 	}
@@ -535,7 +597,7 @@ sub explode_normalized {
 	my $added_title = myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
 	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
 
-	for (qw/tags notes/) {
+	for (qw/tags notes folder/) {
 	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
 	}
     }

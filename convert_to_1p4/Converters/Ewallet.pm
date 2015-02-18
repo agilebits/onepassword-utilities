@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Ewallet 1.00;
+package Converters::Ewallet 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -456,10 +456,12 @@ sub do_import {
     my ($npre_explode, $npost_explode);
     while (s/\A(Category: .+?)\x{0a}{2}((?:Category: .+$)|\Z)/$2/ms) {
 	my $cards = $1;
-	my $card_tags;
+	my ($card_tags, $card_folder);
 
+	# Although categories can be nested in eWallet, there is no way to detect category hierarchy in the text export file.
 	if ($cards =~ s/^Category: (.+?)(\x{0a}{2})/$2/ms) {
 	    $card_tags = $1;
+	    $card_folder = $1;
 	    debug 'Category: ', $card_tags;
 	}
 	else {
@@ -483,14 +485,12 @@ sub do_import {
 	    my ($cardstr, $orig) = ($1, $1);
 	    my ($card_title);
 
-	    #debug "CARD: '$cardstr'";
-
 	    if ($cardstr =~ s/^([^\x{0a}]+)(?:\x{0a}|\Z)//ms) {			# card name
 		debug "------  Card name: ", $1;
 		$card_title = $1;
 	    }
 	    else {
-		die "Card name is missing in card entry\n", $cardstr;
+		bail "Card name is missing in card entry\n", $orig;
 	    }
 
 	    my $itype = find_card_type($cardstr);
@@ -500,7 +500,7 @@ sub do_import {
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \$cardstr, $card_title, $card_tags, \@saved_notes);
+	    my $normalized = normalize_card_data($itype, \$cardstr, $card_title, $card_tags, \@saved_notes, $card_folder);
 
 	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	    # common function used by all converters?
@@ -585,10 +585,11 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $cardstr, $title, $tags, $saved_notes, $postprocess) = @_;
+    my ($type, $cardstr, $title, $tags, $saved_notes, $folder, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	tags	=> $tags,
+	folder	=> [$folder],
     );
 
     if ($type eq 'note' and $$cardstr !~ /__CARDNOTES__/) {

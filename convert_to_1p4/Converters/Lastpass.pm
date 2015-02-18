@@ -299,7 +299,7 @@ sub do_import {
     while (my $hr = $csv->getline_hr($io)) {
 	debug 'ROW: ', $rownum++;
 
-	my ($itype, $card_title, $card_notes, @card_tags, @fieldlist);
+	my ($itype, $card_title, $card_notes, @card_tags, @card_folder, @fieldlist);
 
 	# Switch on the form of CSV export:
 	#    - standard entries (LastPass CSV File)
@@ -317,7 +317,10 @@ sub do_import {
 	    $card_title =  $hr->{'name'};
 	    $card_notes =  $hr->{'extra'};
 	    push @card_tags, 'Favorite'		if $hr->{'fav'} == 1;
-	    push @card_tags, $hr->{'grouping'}	if $hr->{'grouping'} ne '(none)' and $hr->{'grouping'} ne '';
+	    if ($hr->{'grouping'} ne '(none)' and $hr->{'grouping'} ne '') {
+		push @card_tags, $hr->{'grouping'};
+		@card_folder = split /\\/, $hr->{'grouping'};
+	    }
 
 	    if ($hr->{'url'} ne 'http://sn') {
 		$itype = 'login';
@@ -376,7 +379,7 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, \@card_tags, \$card_notes);
+	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, \@card_tags, \$card_notes, \@card_folder);
 
 	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	# common function used by all converters?
@@ -436,11 +439,12 @@ sub do_export {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $postprocess) = @_;
+    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
     my %norm_cards;
-    $norm_cards{'title'} = $title	if $title ne '';
-    $norm_cards{'tags'}  = $tags;
-    $norm_cards{'notes'} = $$notesref;
+    $norm_cards{'title'}   = $title	if $title ne '';
+    $norm_cards{'tags'}    = $tags;
+    $norm_cards{'folder'}  = $folder;
+    $norm_cards{'notes'}   = $$notesref;
 
     #[1..$#$defs#]
     my $defs = $card_field_specs{$type}{'fields'};

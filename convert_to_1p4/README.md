@@ -4,11 +4,13 @@ The script **convert_to_1p4.pl** can convert exported data from several password
 The following password management programs are currently supported:
 
 * Clipperz
+* EssentialPIM
 * eWallet
 * Handy Safe
 * Keepass 2
 * KeepassX
 * OS X Keychain
+* Password Depot
 * LastPass
 * mSecure
 * Safe in Cloud
@@ -34,6 +36,8 @@ The following list of password managers indicate the software version and platfo
 
 * Clipperz: the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014.
 
+* EssentialPIM: Windows: 6.04
+
 * eWallet: OS X: 7.3; Windows: 7.6.4
 
 * Handy Safe: OS X: 1.02; Windows: Handy Safe Desktop Professional 3.01
@@ -44,9 +48,11 @@ The following list of password managers indicate the software version and platfo
 
 * Keychain (OS X): OS X 10.9.5, 10.10
 
-* LastPass: LastPass is a browser-dependent extension, and various versions exist (version 3.1.54 Firefox/Windows tested) 
+* LastPass: LastPass is a browser-dependent extension, and various versions exist (version 3.1.54 Firefox/Windows tested)
 
 * mSecure: OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
+
+* Password Depot 2: Windows: 8.1.1
 
 * Safe in Cloud: OS X: 1.6; Windows: 2.8
 
@@ -108,6 +114,7 @@ You are about to convert your data.  The script only reads the file you exported
 **Note**: The command below contains the generic term *converter_name* as a placeholder - when typing the command, instead of typing this generic *converter_name*, type the name of the desired converter.  The list of currently supported converters is:
 
 - clipperz
+- essentialpim
 - ewallet
 - handysafe
 - keepass2
@@ -115,6 +122,7 @@ You are about to convert your data.  The script only reads the file you exported
 - keychain
 - lastpass
 - msecure
+- passworddepot
 - safeincloud
 - safewallet
 - splashid
@@ -128,12 +136,12 @@ Now, let's enter the proper conversion command.
 On OS X, in the Terminal window, enter the command (**Yosemite note**: replace the word `perl` below with `perl5.16`):
 
 
-    perl convert_to_1p4.pl converter_name -v ../../pm_export.txt
+    perl convert_to_1p4.pl converter_name -v ../pm_export.txt
     
 
 On Windows, in the command shell, enter the command:
 
-    perl convert_to_1p4.pl converter_name -v ..\..\pm_export.txt
+    perl convert_to_1p4.pl converter_name -v ..\pm_export.txt
 
 Hit `Enter` after you've entered the correct command.  See **Note** below.
 
@@ -183,25 +191,29 @@ $ perl convert_to_1p4.pl ewallet --help
 Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
 converters:
-    clipperz ewallet handysafe keepass2 keepassx keychain lastpass msecure safeincloud splashid
+    clipperz ewallet handysafe keepass2 keepassx keychain lastpass msecure passworddepot
+    safeincloud safewallet splashid
 
 options:
-    --debug           | -d                  # enable debug output
-    --exptypes        | -e <type list>      # comma separated list of one or more export types from list below
-    --help            | -h                  # output help and usage text
-    --imptypes        | -i <type list>      # comma separated list of one or more import types from list below
-    --outfile         | -o <outfile>        # use file named outfile.1pif as the output file
-    --verbose         | -v                  # output operations more verbosely
-    --[no]watchtower  | -w                  # set each card's creation date to trigger Watchtower checks (default: on)
+    -d or --debug              # enable debug output
+    -e or --exptypes <list>    # comma separated list of one or more export types from list below
+    -f or --folders            # create and assign items to folders
+    -h or --help               # output help and usage text
+    -i or --imptypes <list>    # comma separated list of one or more import types from list below
+    -o or --outfile <ofile>    # use file named ofile.1pif as the output file
+    -v or --verbose            # output operations more verbosely
+          --nowatchtower       # do not set creation date for logins to trigger Watchtower checks
 
 supported import types:
     bankacct callingcard carinfo cellphone clothes combolock contact contactlens creditcard
-    driverslicense email emergency general health idcard insurance internet lens librarycard membership
-    note passport password prescription serialnum socialsecurity software voicemail votercard website
+    driverslicense email emergency general health idcard insurance internet lens librarycard
+    membership note passport password prescription serialnum socialsecurity software
+    voicemail votercard website
 supported export types:
-    bankacct creditcard driverslicense email login membership note passport server socialsecurity
-    software
+    bankacct creditcard driverslicense email login membership note passport server
+    socialsecurity software
 ```
+
 ---
 
 #### Options: `--imptypes` and `--exptypes`
@@ -210,6 +222,9 @@ By default, all exported entries will be processed and converted to types that 1
 For example, if you only wanted eWallet's types `bankacct` and `votercard` converted, the option `--imptypes bankacct,votercard` would be added to the command line.  And if you only wanted `note` types to be exported to the 1Password 1PIF file, then the option `--exptypes note` would be added.  This may result in more entries than you expect, as some password manager entry types will be split into two or more different 1Password entry types (aka Categories).
 
 For example, a single LastPass entry of type *Identity* may be split into four separate 1Password entries, one each the types *Identity*, *Login*, *Secure Note*, and *Social Security*.  The list of supported types is available via the `--help` option when a converter is specified on the command line (see the example ```--help``` output above).  Take care when using ```--exptypes``` with types that split.
+
+#### Option: `--folders`
+The `--folders` option supports the creation of Folders in 1Password, and places your records into the same folder hierarchy as supported in your password manager.   This feature is disabled by default, because the converter is unaware of existing folders in your vault.  If you use this option, all Folder names existing in the vault are ignored, and the converter will create new Folders, possibly with names identical to those already in your vault. In addition, re-running the converter and re-importing will duplicate the Folder names, since new unique folder identifiers are created each time the converter is run.  For best results, import converted data only into a fresh vault.
 
 #### Option: `--nowatchtower`
 
@@ -263,6 +278,13 @@ The Clipperz converter currently supports only English field names.
 
 ---
 
+### ● EssentialPIM
+Launch EssentialPIM and export its password database to a text file using the `File > Export > Password Entries > Comma Separated Values (*.csv)...` menu.  Select All entries from the *Entries to be exported* dialog.   You may optionally select the fields you want exported as well by selecting the `Fields...` button (but you should leave selected the fields that correspond to the stock fields: Title, User Name, Password, URL, and Notes).  Click the `OK` button, and navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit EssentialPIM.
+
+Note: EssentialPIM does not properly handle the exported field names if the names contain any comma characters.  Before you export, edit a single password entry record in EssentialPIM, and examine each of your field names. Replace any commas in the field names some other character.  Editing the field names inside a single record will globally change the field names for all records.  Once the commas are removed from the field names, you may now export your data.
+
+---
+
 ### ● eWallet
 Launch eWallet and export its database to a text file using the `File > Save As > Text File...` menu.  Save the file with the name **pm_export.txt** to your Desktop.  You may now quit eWallet.
 
@@ -285,13 +307,13 @@ If the conversion indicates the same number of records as contained in your eWal
 ### ● Handy Safe
 OS X: Launch Handy Safe and select the HANDY SAFE (topmost) grouping in the Handy Safe left sidebar.  To export the database as an XML export file, select the `File > Export` menu item.
 
-Navigate to your **Desktop** folder in the Export File dialog, and in the File name area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit Handy Safe.
+Navigate to your **Desktop** folder in the Export File dialog, and in the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit Handy Safe.
 
 ---
 
 ### ● KeePass 2
 Launch KeePass 2, and export its database to an XML export file using the ```File > Export ...``` menu item, and select the KeePass XML (2.x) format.  In the `File: Export to:` section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your **Desktop** folder, and in
-the File name area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
+the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
 
 ---
 
@@ -314,7 +336,7 @@ OS X will prompt you to allow the action - press `Allow`.  You will have to do t
 
 ### ● LastPass
 
-Launch the browser you normally use with LastPass. From the LastPass browser extension, select `Tools > Advanced Tools > Export To > LastPass CSV File`, and when prompted, enter your LastPass vault password.  Navigate to your **Desktop** folder in the *Select a file to export to* dialog, and in the File name area, enter the name **pm_export.txt**, and click `Save`.
+Launch the browser you normally use with LastPass. From the LastPass browser extension, select `Tools > Advanced Tools > Export To > LastPass CSV File`, and when prompted, enter your LastPass vault password.  Navigate to your **Desktop** folder in the *Select a file to export to* dialog, and in the *File name* area, enter the name **pm_export.txt**, and click `Save`.
 
 **Note**: In some cases, the LastPass exported data will open in a separate browser window, showing the contents of your LastPass data.  If this happens, select all of the data on the page (Cmd-A) and Copy it (Cmd-C). Open TextEdit, and go to the menu `TextEdit > Preferences`. In the New Document tab, under Format, select `Plain Text` and close that dialog. Open a new document (Cmd-N). Paste your data now (Cmd-V), and save it to your Desktop with the file name `pm_export.txt` and selecting `Unicode (UTF-8)` as the Plain Text Encoding.
 
@@ -325,11 +347,19 @@ Launch the browser you normally use with LastPass. From the LastPass browser ext
 ### ● mSecure
 
 Launch mSecure, and export its database as a CSV export file using the `File > Export > CSV File...` menu item.  Click `OK` to the warning dialog that advises caution since your data will be exported in an unencrypted format.  Navigate to your **Desktop** folder in the *Export File* dialog, and in
-the File name area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an CSV file by the name above on your Desktop.  You may now quit mSecure.
+the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an CSV file by the name above on your Desktop.  You may now quit mSecure.
 
 **Note**: mSecure does not output the labels for custom fields.  Before you uninstall mSecure, you should verify that you understand the meaning of your imported data.  Take a screenshot or write down the field names and orders of your customized fields and cards, and compare these against the data imported into 1Password.
 
 **Note**: mSecure on Windows 3.5.4 (and probably earlier) does not properly export CSV data.  There are issues with the characters backslash \ and double-quotes ".  There may be additional issues due to the incorrect and ambiguous handling of these escape and quoting characters.  Before you uninstall mSecure, you should verify your data against the data imported into 1Password.
+
+---
+
+### ● Password Depot
+
+Launch Password Depot.  On the left side, select your password file's name (or the highest level folder you want to export).  Select the `Tools` ribbon menu item, click the `Export` button, and select the `Export Wizard` item.  Enter your Password Depot password when the dialog appears, and press `OK`.  The *Export format* should be left as *Extensible Markup Language format (**.xml)*.  Click the `Browse` button, navigate to your **Desktop** folder and in the *File name* area, enter the name **pm_export** (note: you cannot use the .txt suffix - your file will be named **pm_export.xml** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.xml** where appropriate).  Be sure the *Original folder* pulldown has the top-level folder you want exported (the top level is the entire contents of the password file).  Click `Next` to complete the export and then click `Finish` to close out the wizard.  You should now have your data exported as an XML text file by the name above on your Desktop.  You may now quit Password Depot.
+
+**Note**: Password Depot supports formatted text in Information items.  It does not, however, export this formatting information - only the raw text is exported.
 
 ---
 
@@ -374,13 +404,13 @@ When an invalid date is detected, it is stored in the *notes* section.
 Some password management programs export no century component  to their date's year values.  The converters employ a strategy, depending upon the particular date field, to use a sensible century value.  For example, a *Valid From* date of 12/03 is almost guaranteed to be 12/2003 as opposed to 12/1903, and with today being Oct 9th, 2014, a birthdate of 11/14 cannot be 11/2014.
 
 #### Groups, Tags, and Other Indicators
-Some password management programs allow placement of items into groups or folders (flat or hierarchical).  When available in the export, these will be recreated as colon-separated lists of 1Password Tags (note: these are not currently shown in the main UI of the Windows version of 1Password, however, the Tags do exist within the database file, and can be seen in the Tags section when editing an entry).
+Some password management programs allow placement of items into groups or folders (flat or hierarchical).  When available in the export, these will be recreated as colon-separated lists of 1Password Tags (note: these are not currently shown in the main UI of the Windows version of 1Password, however, the Tags do exist within the database file, and can be seen in the Tags section when editing an entry).  With the `--folders` option, items will also be placed into the appropriately named Folder within 1Password.
 
 Likewise, any tags, favorite or star markers, when available for an entry, will become 1Password tags.
 
 Finally, other specific indicators may be placed into the 1Password entries notes section (e.g. Color: Red).
 
-To place a set of tagged 1Password entries into a folder, select a given tag and create an appropriately named folder for that tag.  With the Folder list expanded, and the tagged items selected, drag the items onto the folder name. 
+If the `--folders` option was not used, you can place a set of tagged 1Password entries into a 1Password folder by selecting a given tag and creating an appropriately named folder for that tag.  With the Folder list expanded, and the tagged items selected, drag the items onto the folder name. 
 
 ---
 

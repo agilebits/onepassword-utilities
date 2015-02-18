@@ -1,6 +1,17 @@
+Version 1.03:
+  - New: EssentialPIM converter now available.
+  - New: Password Depot converter now available.
+  - New: Folder creation is supported, but disabled by default.  Password managers that support folders or groups are:
+    ewallet, handysafe, keepass2, keepassx, lastpass, msecure, safewallet, splashid.  Include the --folders option on
+    the command line to enable folders.  Tags will still include colon-separated folder hierarchies.  See the README
+    for caveats when using this option.
+  - Fix: The 'location' field was not being set - it is required for 1Password for Window's extension to see the entry.
+  - Fix: Typo in README file that left an extra directory level in the conversion command.
+  - New: Added Secure Notes export to Keychain converter.  Also, added an entry to the table of ignored svce names.
+
 Version 1.02:
   - Change: Set default decoder for SplashID back to macroman.
-  - New: specifically support SplashID's 'Addressess' category (into Secure Notes).
+  - New: Specifically support SplashID's 'Addressess' category (into Secure Notes).
   - Fix: Converter keepass2 was incorrectly splitting a group name that contained certain XML-reserved characters.
   - Fix: README updates: clarify LastPass export instructions; enumerate and better describe Step 4; clarify
     that attachments are not unsupported; describe a workflow for creating Folders from tagged values; remove extra
