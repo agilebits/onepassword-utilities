@@ -73,8 +73,8 @@ sub do_import {
     my $n = 1;
     my ($npre_explode, $npost_explode);
     for my $c (@gCards) {
-	my ($card_title, $card_tags, $card_notes) = ($c->{'Title'}, $c->{'Tags'}, $c->{'Notes'});
-	delete @{$c}{qw/Title Tags Notes/};
+	my ($card_title, $card_tags, $card_notes, $card_folder) = ($c->{'Title'}, $c->{'Tags'}, $c->{'Notes'}, $c->{'Folder'});
+	delete @{$c}{qw/Title Tags Notes Folder/};
 
 	my $itype = find_card_type($c);
 
@@ -83,7 +83,7 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, $c, $card_title, $card_tags, \$card_notes);
+	my $normalized = normalize_card_data($itype, $c, $card_title, $card_tags, \$card_notes, $card_folder);
 
 	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
 	# common function used by all converters?
@@ -141,11 +141,12 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $carddata, $title, $tags, $notesref, $postprocess) = @_;
+    my ($type, $carddata, $title, $tags, $notesref, $folder, $postprocess) = @_;
     my %norm_cards = (
 	title	=> $title,
 	notes	=> defined $$notesref ? $$notesref : '',
 	tags	=> $tags,
+	folder	=> $folder,
     );
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
@@ -276,6 +277,7 @@ sub end_handler {
 	$xmldbg && debug "END ENTRY: ... output values\n";
 	debug "END ENTRY: ... output values\n";
 	$fields{'Tags'} = join '::', @group[1..$#group];
+	$fields{'Folder'} = [ @group[1..$#group] ];
 	push @gCards, { %fields };
 	#print Dumper \%fields;
 

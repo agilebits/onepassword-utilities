@@ -18,7 +18,7 @@ use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.02";
+my $version = "1.03";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -61,6 +61,7 @@ for (qw/imp exp/) {
 our %opts = (
     outfile => join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P4_import'),
     watchtower => 1,
+    folders => 0,			# folder creation is disabled by default
 ); 
 
 my @opt_config = (
@@ -68,6 +69,8 @@ my @opt_config = (
 	'debug|d'	=> sub { debug_on() } ],
     [ q{-e or --exptypes <list>    # comma separated list of one or more export types from list below},
 	'exptypes|e=s' ],
+    [ q{-f or --folders            # create and assign items to folders},
+	'folders|f' ],
     [ q{-h or --help               # output help and usage text},
 	'help|h'	=> sub { Usage(0) } ],
     [ q{-i or --imptypes <list>    # comma separated list of one or more import types from list below},
