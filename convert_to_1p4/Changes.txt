@@ -1,3 +1,14 @@
+Version 1.04:
+  - New: Data Guardian converter now available.
+  - New: Datavault converter now available.
+  - New: Passpack converter now available.
+  - New: PasswordWallet converter now available.
+  - New: Option --modified will set the 'last modified' field for a 1Password entry based on the exported modification
+    date provided by a password manager's export data.  See 'Option: --modified' in the README file.
+  - Fix: An item's notes from OS X Keychain converter could contain a stringified ARRAY reference name.
+  - Fix: The modification and creation dates were missing from the notes section for the OS X Keychain converter.
+  - Internal: Remove extraneous, remnant argument to UUID generation call.
+
 Version 1.03:
   - New: EssentialPIM converter now available.
   - New: Password Depot converter now available.

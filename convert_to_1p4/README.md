@@ -4,13 +4,17 @@ The script **convert_to_1p4.pl** can convert exported data from several password
 The following password management programs are currently supported:
 
 * Clipperz
+* Data Guardian
+* DataVault
 * EssentialPIM
 * eWallet
 * Handy Safe
 * Keepass 2
 * KeepassX
 * OS X Keychain
+* Passpack
 * Password Depot
+* PasswordWallet
 * LastPass
 * mSecure
 * Safe in Cloud
@@ -36,6 +40,10 @@ The following list of password managers indicate the software version and platfo
 
 * Clipperz: the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014.
 
+* Data Guardian: OS X: 3.2; Windows: 3.2
+
+* DataVault: OS X: 5.2.39; Windows: 5.1.32
+
 * EssentialPIM: Windows: 6.04
 
 * eWallet: OS X: 7.3; Windows: 7.6.4
@@ -52,7 +60,11 @@ The following list of password managers indicate the software version and platfo
 
 * mSecure: OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
 
+* Passpack: Web version 7.7.14 tested on OS X and Windows
+
 * Password Depot 2: Windows: 8.1.1
+
+* PasswordWallet: OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
 
 * Safe in Cloud: OS X: 1.6; Windows: 2.8
 
@@ -114,6 +126,8 @@ You are about to convert your data.  The script only reads the file you exported
 **Note**: The command below contains the generic term *converter_name* as a placeholder - when typing the command, instead of typing this generic *converter_name*, type the name of the desired converter.  The list of currently supported converters is:
 
 - clipperz
+- dataguardian
+- datavault
 - essentialpim
 - ewallet
 - handysafe
@@ -122,7 +136,9 @@ You are about to convert your data.  The script only reads the file you exported
 - keychain
 - lastpass
 - msecure
+- passpack
 - passworddepot
+- passwordwallet
 - safeincloud
 - safewallet
 - splashid
@@ -226,6 +242,15 @@ For example, a single LastPass entry of type *Identity* may be split into four s
 #### Option: `--folders`
 The `--folders` option supports the creation of Folders in 1Password, and places your records into the same folder hierarchy as supported in your password manager.   This feature is disabled by default, because the converter is unaware of existing folders in your vault.  If you use this option, all Folder names existing in the vault are ignored, and the converter will create new Folders, possibly with names identical to those already in your vault. In addition, re-running the converter and re-importing will duplicate the Folder names, since new unique folder identifiers are created each time the converter is run.  For best results, import converted data only into a fresh vault.
 
+#### Option: `--modified`
+
+Some password managers will export a date of modification, and this date can be used to set 1Password's `last modified` field for an entry.  For converters that support this option, you may include the `--modified` option on the command line (it is disabled by default) .  See the output of the `--help` option; converters that support the `--modified` option will show the option in the `--help` output.
+
+Note: This feature requires at least 1Password for Mac  5.3.BETA-17.
+
+Note: The modified date used by various password managers may reflect the date the record was last updated, or the date the password field was last updated.  The converters can only set the `last modified` value for the entire 1Password entry, and not for any specific field within the entry.
+
+
 #### Option: `--nowatchtower`
 
 This converter sets the Created date for each *Login* item to 1/1/2000.  This sufficiently old date in the past allows 1Password's
@@ -275,6 +300,27 @@ On Windows, open Notepad, and paste the text into the new document.  Save the fi
 You should close the JSON export Clipperz web page, since it contains your unencrypted data.  Also, since your data is on the clipboard, you should copy some other text to clear the clipboard, and remove any clipboard manager entries if you have a clipboard manager program installed. It is possible that your browser has also cached the exported data.  You may now close the main clipperz page.
 
 The Clipperz converter currently supports only English field names.
+
+---
+
+### ● Data Guardian
+
+Launch Data Guardian and export its database to a CSV text file using the `Record > Export...` menu item.  From the left side bar, select **Text**.  Under the list of fields that can be exported, click the `Check All` button.  In the **Field Delimiter** pulldown, select the *Comma (CSV)* choice.  Under **Options**, select the *Include header row* checkbox.  Click the `Export` button, and in the *Export Database* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  When the dialog appears asking what suffix to use, select the `use .txt` button.  You may now quit Data Guardian.
+
+Note: Data Guardian does not construct a reliable CSV file.  In certain cases, it is impossible to determine one field from the next field (the field's value will contain one or more commas and/or double quotes).  When this occurs, the converter will skip the record, and report an error indicating the name of the record that could not be converter.
+
+---
+
+### ● DataVault
+
+Launch DataVault and export its database to a text file using the `Tools > Export` menu item.  Select the **All Items (DVX, CSV)** choice, and click `OK`.  In the *Save As* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.csv** to your Desktop, leaving the **Save as type** set to *CSV files (.csv files)*. You may now quit DataVault.  Rename the file **pm_export.csv** on the Desktop to **pm_export.txt** so that the remainder of the instructions above will be consistent (DataVault does not allow exporting a file with a .txt suffix).
+
+Note: DataVault has several essentially identical templates, which are indistinguishable in the CSV export.  These are treated as a single DataVault template, and are mapped into 1Password categories.  These are:
+
+- bank account, checking account     --> bankacct
+- business contact, personal contact --> contact
+- credit card, mastercard, visa      --> creditcard
+- business, financial                --> business
 
 ---
 
@@ -355,6 +401,16 @@ the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you s
 
 ---
 
+### ● Passpack
+
+Launch the browser you normally use with Passpack and unlock your vault. From the Passpack toolbar menu, select `Tools` and then on the next screen, select `Export`.  Select the option `Comma Separated Values`, and the other option `All entries`.  Now select the columns to export under *Click on the name of the first field to export* - select these one at a time in the same order as presented on the screen: **Name**, **User ID**, **Password**, **Link**, **Tags**, **Notes** and **Email**.  Now click the `Continue` button.  A new window will appear with your exported data.  Select all the text data in the text box and copy it.  You will save it with either Notepad (on Windows) or TextEdit (on OS X) as follows:
+
+On Windows, create and open a new text document by right-clicking the Desktop and selecting New > Text Document. Name the document `pm_export.txt`.  Right-click that document, select `Edit`, and Paste your copied data (Ctrl-V).  Select Notepad's `File > Save As...` menu, set the *Encoding* to **UTF-8**, and click `Save` to save the document.
+
+On OS X, open TextEdit, and go to the menu `TextEdit > Preferences`. In the New Document tab, under Format, select `Plain Text` and close that dialog. Open a new document (Cmd-N). Paste your copied data (Cmd-V), and save the document to your Desktop with the file name `pm_export.txt`, selecting `Unicode (UTF-8)` as the Plain Text Encoding.
+
+---
+
 ### ● Password Depot
 
 Launch Password Depot.  On the left side, select your password file's name (or the highest level folder you want to export).  Select the `Tools` ribbon menu item, click the `Export` button, and select the `Export Wizard` item.  Enter your Password Depot password when the dialog appears, and press `OK`.  The *Export format* should be left as *Extensible Markup Language format (**.xml)*.  Click the `Browse` button, navigate to your **Desktop** folder and in the *File name* area, enter the name **pm_export** (note: you cannot use the .txt suffix - your file will be named **pm_export.xml** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.xml** where appropriate).  Be sure the *Original folder* pulldown has the top-level folder you want exported (the top level is the entire contents of the password file).  Click `Next` to complete the export and then click `Finish` to close out the wizard.  You should now have your data exported as an XML text file by the name above on your Desktop.  You may now quit Password Depot.
@@ -362,6 +418,13 @@ Launch Password Depot.  On the left side, select your password file's name (or t
 **Note**: Password Depot supports formatted text in Information items.  It does not, however, export this formatting information - only the raw text is exported.
 
 ---
+
+### ● PasswordWallet
+
+Launch PasswordWallet, and export its database as a text file using the `File > Export > Visible entries to text file...` menu.  Enter the wallet's password when the password dialog appears.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit PasswordWallet.
+
+---
+
 
 ### ● Safe in Cloud
 Launch Safe in Cloud, and export its database to an XML file using the `File > Export > As XML` menu.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit Safe in Cloud.

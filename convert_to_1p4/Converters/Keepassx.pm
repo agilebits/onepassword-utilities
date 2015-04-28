@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepassx 1.00;
+package Converters::Keepassx 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -21,6 +21,8 @@ use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
 use XML::XPath;
 use XML::XPath::XMLParser;
+use Time::Local qw(timelocal);
+use Time::Piece;
 
 my %card_field_specs = (
     login =>			{ textname => undef, fields => [
@@ -38,7 +40,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     };
 }
 
@@ -73,12 +77,18 @@ sub do_import {
 	    my @fields;
 
 	    my $card_title = $xp->findvalue('title',   $entrynode)->value();
-	    my $card_note  = $xp->findvalue('comment', $entrynode)->value();
+	    my $card_notes = $xp->findvalue('comment', $entrynode)->value();
+	    my $card_modified;
 
 	    for (qw/username password url lastaccess lastmod creation expire/) {
 		my $val = $xp->findvalue($_, $entrynode)->value();
 		next if $val eq '';
-		push @fields, [ $_ => $val ];		# retain field order
+		if ($main::opts{'modified'} and $_ eq 'lastmod') {
+		    $card_modified = date2epoch($val);
+		}
+		else  {
+		    push @fields, [ $_ => $val ];		# retain field order
+		}
 		debug "\t\t$_: ", $val;
 	    }
 
@@ -89,10 +99,14 @@ sub do_import {
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \@fields, $card_title, $card_tags, \$card_note, \@groups);
+	    my $normalized = normalize_card_data($itype, \@fields,
+		{ title		=> $card_title,
+		  tags		=> $card_tags,
+		  notes		=> $card_notes // '',
+		  folder	=> \@groups,
+		  modified	=> $card_modified });
 
-	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	    # common function used by all converters?
+	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	    my $cardlist = explode_normalized($itype, $normalized);
 
 	    my @k = keys %$cardlist;
@@ -124,8 +138,15 @@ sub find_card_type {
     return $type;
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -135,13 +156,7 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> defined $$notesref ? $$notesref : '',
-	tags	=> $tags,
-	folder	=> $folder,
-    );
+    my ($type, $fieldlist, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -164,21 +179,38 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
 	    }
 	}
     }
 
     # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
+    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
     for (@$fieldlist) {
 	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
+	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
+	$norm_cards->{'notes'} .= join ': ', @$_;
     }
 
-    return \%norm_cards;
+    return $norm_cards;
 }
 
+# Date converters
+# lastmod field:	 yyyy-mm-ddThh:mm:ss
+sub parse_date_string {
+    local $_ = $_[0];
+    my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%S")) {	# KeePassX dates are in standard UTC string format, no TZ
+	return $t;
+    }
+
+    return undef;
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
+}
 1;

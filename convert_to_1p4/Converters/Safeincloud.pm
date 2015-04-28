@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Safeincloud 1.00;
+package Converters::Safeincloud 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -84,7 +84,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     };
 }
 
@@ -113,7 +115,7 @@ sub do_import {
 
 	my $cardnodes = $xp->find('card', $nodes);
 	foreach my $cardnode ($cardnodes->get_nodelist) {
-	    my (@fieldlist, @card_tags, $card_note);
+	    my (@fieldlist, @card_tags, $card_note, $card_modified);
 
 	    next if $cardnode->getAttribute('template') eq 'true';
 	    my $card_title = $cardnode->getAttribute('title');
@@ -141,6 +143,9 @@ sub do_import {
 	    my $icon = $cardnode->getAttribute('symbol');
 	    push @fieldlist, [ Color  => $cardnode->getAttribute('color') ];
 	    push @card_tags, 'Stared'	if $cardnode->getAttribute('star') eq 'true';
+	    if ($main::opts{'modified'}) {
+		$card_modified =	date2epoch($cardnode->getAttribute('time_stamp'));
+	    }
 
 	    my $itype = find_card_type(\@fieldlist, $icon);
 
@@ -149,10 +154,13 @@ sub do_import {
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, \@card_tags, \$card_note);
+	    my $normalized = normalize_card_data($itype, \@fieldlist, 
+		{ title		=> $card_title,
+		  tags		=> \@card_tags,
+		  notes		=> $card_note // '',
+		  modified	=> $card_modified });
 
-	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	    # common function used by all converters?
+	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	    my $cardlist = explode_normalized($itype, $normalized);
 
 	    my @k = keys %$cardlist;
@@ -209,8 +217,15 @@ sub find_card_type {
     return $type;
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -220,12 +235,7 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> defined $$notesref ? $$notesref : '',
-	tags	=> $tags,
-    );
+    my ($type, $fieldlist, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -248,21 +258,21 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
 	    }
 	}
     }
 
     # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
+    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
     for (@$fieldlist) {
 	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
+	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
+	$norm_cards->{'notes'} .= join ': ', @$_;
     }
 
-    return \%norm_cards;
+    return $norm_cards;
 }
 
 # sort logins as the last to check
@@ -272,6 +282,11 @@ sub by_test_order {
     return  1 if $a eq 'login';
     return -1 if $b eq 'login';
     $a cmp $b;
+}
+
+sub date2epoch {
+    my $msecs = shift;
+    return $msecs / 1000;
 }
 
 1;
