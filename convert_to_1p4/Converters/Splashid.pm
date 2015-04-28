@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Splashid 1.02;
+package Converters::Splashid 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -20,6 +20,8 @@ binmode STDERR, ":utf8";
 use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
 use Text::CSV;
+use Time::Local qw(timelocal);
+use Time::Piece;
 
 # note: the second field, the type hint indicator (e.g. $card_field_specs{$type}[$i][1]}),
 # is not used, but remains for code-consisency with other converter modules.
@@ -132,7 +134,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     }
 }
 
@@ -189,7 +193,7 @@ sub do_import {
     my ($n, $rownum) = (1, 1);
     my ($npre_explode, $npost_explode);
     my (@labels, @values, @labels_cust);
-    my ($card_type, $card_title, $card_tags, @card_notes, $card_folder);
+    my ($card_type, $card_title, $card_tags, @card_notes, $card_folder, $card_modified);
 
     while (my $row = $csv->getline ($io)) {
 	if ($row->[0] eq '' and @$row == 1) {
@@ -260,6 +264,7 @@ sub do_import {
 
 
 	$card_title = '';
+	$card_modified = undef;
 	# When a user redefines a card type, the card type and the field semantics are unknown.
 	# In this case (the type isn't available in %ll_typeMap), force the card type to 'note' and push
 	# to notes the label:value pairs.
@@ -276,6 +281,9 @@ sub do_import {
 		next if $val eq '';
 		if ($label eq 'Description') {
 		    $card_title = $val;
+		}
+		elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
+		    $card_modified = date2epoch($val);
 		}
 		else {
 		    # @fieldlist maintains card's field order
@@ -297,6 +305,9 @@ sub do_import {
 		if ($label eq 'Description') {
 		    $card_title = $val;
 		}
+		elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
+		    $card_modified = date2epoch($val);
+		}
 		else {
 		    push @{$card_notes[1]}, join ': ', $label, $val		if $val ne '';
 		}
@@ -314,10 +325,14 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, $card_folder);
+	my $normalized = normalize_card_data($itype, \@fieldlist,
+	    { title	=> $card_title,
+	      tags	=> $card_tags,
+	      notes	=> $card_notes,
+	      folder	=> $card_folder,
+	      modified	=> $card_modified });
 
-	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	# common function used by all converters?
+	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	my $cardlist = explode_normalized($itype, $normalized);
 
 	my @k = keys %$cardlist;
@@ -350,8 +365,15 @@ sub do_export {
     create_pif_file(@_);
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -361,13 +383,7 @@ sub do_export {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $$notesref,
-	tags	=> $tags,
-	folder	=> $folder,
-    );
+    my ($type, $fieldlist, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -390,7 +406,7 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
 		last;
 	    }
@@ -398,14 +414,33 @@ sub normalize_card_data {
     }
 
     # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
+    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
     for (@$fieldlist) {
 	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
+	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
+	$norm_cards->{'notes'} .= join ': ', @$_;
     }
 
-    return \%norm_cards;
+    return $norm_cards;
+}
+
+# Date converters
+# Date Mod field:	 monthname dd,yyyy
+sub parse_date_string {
+    local $_ = $_[0];
+    my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    s/(\d{2}), (\d{4})$/$1,$2/;					# SplashID 8 adds a space after the comma
+    if (my $t = Time::Piece->strptime($_, "%B %d,%Y")) {	# monthname dd,yyyy
+	return ($t->year, $t->mon, $t->mday);
+    }
+
+    return undef;
+}
+
+sub date2epoch {
+    my ($y, $m, $d) = parse_date_string @_;
+    return defined $y ? 0 + timelocal(0, 0, 0, $d, $m - 1, $y): $_[0];
 }
 
 1;

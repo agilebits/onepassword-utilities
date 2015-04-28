@@ -1,7 +1,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.02;
+package Utils::PIF 1.03;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized);
@@ -17,6 +17,12 @@ use JSON::PP;
 use UUID::Tiny ':std';
 use Date::Calc qw(check_date);
 use Utils::Utils qw(verbose debug bail pluralize unfold_and_chop myjoin);
+
+# UUID string used by the 1PIF format to separate individual entries.
+# DaveT: "You know what, I wish we had thought that far ahead and made this an Easter Egg of sorts.
+#         Alas, the truth isn't that exciting :-)"
+
+my $agilebits_1pif_entry_sep_uuid_str = '***5642bee8-a5ff-11dc-8314-0800200c9a66***';
 
 my %typeMap = (
     bankacct =>		'wallet.financial.BankAccountUS',
@@ -387,15 +393,21 @@ sub create_pif_record {
 	$rec->{'secureContents'}{'notesPlain'} .= join ': ', $_->{'inkey'}, $_->{$valuekey};
     }
 
-    ($rec->{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM(), 'cappella.us')) =~ s/-//g;
+    ($rec->{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM())) =~ s/-//g;
 
-    # set the creaated time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
+    # force updatedAt and createdAt to be ints, not strings
+    if (exists $card->{'modified'} and defined $card->{'modified'}) {
+	$rec->{'updatedAt'} = 0 + $card->{'modified'}	if $main::opts{'modified'};
+    }
+
+    # set the created time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
     $rec->{'createdAt'} = 946713600		if $type eq 'login' and $main::opts{'watchtower'};
 
     # for output file comparison testing
     if ($main::opts{'testmode'}) {
 	$rec->{'uuid'} = '0';
 	$rec->{'createdAt'} = 0	if exists $rec->{'createdAt'};
+	$rec->{'updatedAt'} = 0	if exists $rec->{'modified'};
     }
 
     return encode_json $rec;
@@ -417,7 +429,7 @@ sub create_pif_file {
 	for my $card (@{$cardlist->{$type}}) {
 	    my $saved_title = $card->{'title'} // 'Untitled';
 	    if (my $encoded = create_pif_record($type, $card)) {
-		print $outfh $encoded, "\n", '***5642bee8-a5ff-11dc-8314-0800200c9a66***', "\n";
+		print $outfh $encoded, "\n", $agilebits_1pif_entry_sep_uuid_str, "\n";
 		$n++;
 	    }
 	    else {
@@ -478,7 +490,7 @@ sub output_folder_records {
 		typeName => 'system.folder.Regular'
 	    };
 	$frec->{'folderUuid'} = $parent_uuid	if defined $parent_uuid;
-	print $outfh encode_json($frec), "\n", '***5642bee8-a5ff-11dc-8314-0800200c9a66***', "\n";
+	print $outfh encode_json($frec), "\n", $agilebits_1pif_entry_sep_uuid_str, "\n";
 	output_folder_records($outfh, $f->{$_}{'children'}, $f->{$_}{'uuid'})	if $f->{$_}{'children'};
     }
 }
@@ -572,7 +584,7 @@ sub explode_normalized {
     my (%oc, $nc);
     # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
     if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes folder/) {
+	for (qw/title tags notes folder modified/) {
 	    # trigger the for() loop below
 	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
 	}
@@ -597,7 +609,7 @@ sub explode_normalized {
 	my $added_title = myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
 	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
 
-	for (qw/tags notes folder/) {
+	for (qw/tags notes folder modified/) {
 	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
 	}
     }

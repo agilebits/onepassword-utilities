@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepass2 1.01;
+package Converters::Keepass2 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -21,6 +21,8 @@ use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
 use XML::Parser;
 use HTML::Entities;
+use Time::Local qw(timegm);
+use Time::Piece;
 
 my %card_field_specs = (
     login =>			{ textname => undef, fields => [
@@ -47,7 +49,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     };
 }
 
@@ -73,8 +77,9 @@ sub do_import {
     my $n = 1;
     my ($npre_explode, $npost_explode);
     for my $c (@gCards) {
-	my ($card_title, $card_tags, $card_notes, $card_folder) = ($c->{'Title'}, $c->{'Tags'}, $c->{'Notes'}, $c->{'Folder'});
-	delete @{$c}{qw/Title Tags Notes Folder/};
+	my ($card_title, $card_tags, $card_notes, $card_folder, $card_modified) =
+	    ($c->{'Title'}, $c->{'Tags'}, $c->{'Notes'}, $c->{'Folder'}, $c->{'LastModificationTime'});
+	delete @{$c}{qw/Title Tags Notes Folder LastModificationTime/};
 
 	my $itype = find_card_type($c);
 
@@ -83,10 +88,14 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, $c, $card_title, $card_tags, \$card_notes, $card_folder);
+	my $normalized = normalize_card_data($itype, $c, 
+	    { title	=> $card_title,
+	      tags	=> $card_tags,
+	      notes	=> $card_notes // '',
+	      folder	=> $card_folder,
+	      modified	=> $card_modified });
 
-	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	# common function used by all converters?
+	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	my $cardlist = explode_normalized($itype, $normalized);
 
 	my @k = keys %$cardlist;
@@ -130,8 +139,15 @@ sub find_card_type {
     return 'note';
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -141,13 +157,7 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $carddata, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> defined $$notesref ? $$notesref : '',
-	tags	=> $tags,
-	folder	=> $folder,
-    );
+    my ($type, $carddata, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -170,21 +180,21 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		delete $carddata->{$_};		# delete matched so undetected are pushed to notes below
 	    }
 	}
     }
 
     # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if length $norm_cards{'notes'} > 0 and keys %$carddata;
+    $norm_cards->{'notes'} .= "\n"	if length $norm_cards->{'notes'} > 0 and keys %$carddata;
     for (keys %$carddata) {
 	next if $carddata->{$_} eq '';
-	$norm_cards{'notes'} .= "\n"	if length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', $_, $carddata->{$_};
+	$norm_cards->{'notes'} .= "\n"	if length $norm_cards->{'notes'} > 0;
+	$norm_cards->{'notes'} .= join ': ', $_, $carddata->{$_};
     }
 
-    return \%norm_cards;
+    return $norm_cards;
 }
 
 # sort logins as the last to check
@@ -242,6 +252,12 @@ sub char_handler {
 	$group[-1] .= $data;
 	debug "\tGROUP name: ==> '$group[-1]'";
     }
+    elsif ($path =~ /::Group::Entry::Times::LastModificationTime$/) {
+	if ($main::opts{'modified'}) {
+	    debug " **** Field: LastModificationTime: ==> '$data'";
+	    $fields{'LastModificationTime'} = date2epoch($data);
+	}
+    }
     elsif ($path =~ /::Group::Entry::String::Key$/) {
 	debug " **** current key: '$data'";
 	$currentkey = $data;
@@ -290,5 +306,23 @@ sub final_handler {
 }
 
 sub default_handler { }
+
+# Date converters
+# LastModificationTime field:	 yyyy-mm-ddThh:mm:ssZ
+sub parse_date_string {
+    local $_ = $_[0];
+    my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%SZ")) {	# KeePass 2 dates are in standard UTC string format
+	return $t;
+    }
+
+    return undef;
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return defined $t->year ? 0 + timegm($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
+}
 
 1;

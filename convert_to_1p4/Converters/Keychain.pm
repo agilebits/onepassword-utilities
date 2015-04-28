@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keychain 1.01;
+package Converters::Keychain 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -20,6 +20,8 @@ binmode STDERR, ":utf8";
 use Encode;
 use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin unfold_and_chop print_record);
+use Time::Local qw(timelocal);
+use Time::Piece;
 
 my $max_password_length = 50;
 
@@ -106,7 +108,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     };
 }
 
@@ -194,7 +198,7 @@ RULE:
 	    #my $itype = find_card_type(\%entry);
 
 	    my %h;
-	    my @notes = ();
+	    my ($notes, $card_modified);
 	    if ($itype eq 'login') {
 		$h{'password'}	= $entry{'DATA'};
 		$h{'username'}	= $entry{'acct'}						if exists $entry{'acct'};
@@ -204,17 +208,23 @@ RULE:
 		# convert ascii string DATA, which contains \### octal escapes, into UTF-8
 		my $octets = encode("ascii", $entry{'DATA'});
 		$octets =~ s/\\(\d{3})/"qq|\\$1|"/eeg;
-		push @notes, decode("UTF-8", $octets);
-		1;
+		$notes = decode("UTF-8", $octets);
 	    }
 	    else {
 		die "Unexpected itype: $itype";
 	    }
 
 	    # will be added to notes
-	    $h{'modified'}	= $entry{'mdate'}					if exists $entry{'mdate'};
-	    $h{'created'}	= $entry{'cdate'}					if exists $entry{'cdate'};
 	    $h{'protocol'}	= $entry{'ptcl'}					if exists $entry{'ptcl'} and $entry{'ptcl'} =~ /^afp|smb$/;
+	    $h{'created'}	= $entry{'cdat'}					if exists $entry{'cdat'};
+	    if (exists $entry{'mdat'}) {
+		if ($main::opts{'modified'}) {
+		    $card_modified = date2epoch($entry{'mdat'});
+		}
+		else {
+		    $h{'modified'}	= $entry{'mdat'};
+		}
+	    }
 
 	    for (keys %h) {
 		debug sprintf "\t    %-12s : %s", $_, $h{$_}				if exists $h{$_};
@@ -236,10 +246,14 @@ RULE:
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \%h, $sv, undef, \@notes);
+	    my $normalized = normalize_card_data($itype, \%h, 
+		{ title		=> $sv,
+		  tags		=> undef,
+		  notes		=> $notes,
+		  folder	=> undef,
+		  modified	=> $card_modified });
 
-	    # Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	    # common function used by all converters?
+	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	    my $cardlist = explode_normalized($itype, $normalized);
 
 	    my @k = keys %$cardlist;
@@ -280,8 +294,15 @@ sub find_card_type {
     return $type;
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -291,12 +312,7 @@ sub find_card_type {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $carddata, $title, $tags, $notesref, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	tags	=> $tags,
-	notes   => $notesref,
-    );
+    my ($type, $carddata, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -318,18 +334,20 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		delete $carddata->{$key};
 	    }
 	}
     }
 
+    # map remaining keys to notes
+    $norm_cards->{'notes'} .= "\n"        if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and keys %$carddata;
     for my $key (keys %$carddata) {
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'};
-	$norm_cards{'notes'} .= join ': ', $key, $carddata->{$key};
+	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
+	$norm_cards->{'notes'} .= join ': ', $key, $carddata->{$key};
     }
 
-    return \%norm_cards;
+    return $norm_cards;
 }
 
 # sort logins as the last to check
@@ -341,6 +359,24 @@ sub by_test_order {
 
 sub clean_attr_name {
     return ($_[0] =~ /"?([^<"]+)"?<\w+>$/, $_[1]);
+}
+
+# Date converters
+# LastModificationTime field:	 yyyy-mm-dd hh:mm:ss
+sub parse_date_string {
+    local $_ = $_[0];
+    my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    if (my $t = Time::Piece->strptime($_, "%Y-%m-%d %H:%M:%S")) {
+	return $t;
+    }
+
+    return undef;
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 
 1;

@@ -310,8 +310,7 @@ sub do_import {
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
 	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, $card_folder);
 
-	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	# common function used by all converters?
+	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	my $cardlist = explode_normalized($itype, $normalized);
 
 	my @k = keys %$cardlist;

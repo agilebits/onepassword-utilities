@@ -22,6 +22,7 @@ use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
 use XML::XPath;
 use XML::XPath::XMLParser;
 use Time::Local qw(timelocal);
+use Time::Piece;
 use Date::Calc qw(check_date Add_Delta_Days);
 
 # encrypted file
@@ -106,7 +107,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
     };
 }
 
@@ -128,7 +131,7 @@ sub do_import {
 
     my $cardnodes = $xp->findnodes('//PASSWORDS//ITEM');
     foreach my $cardnode (@$cardnodes) {
-	my (@card_tags, @groups);
+	my (@card_tags, @groups, $card_modified);
 
 	for (my $node = $cardnode->getParentNode(); $node->getName() =~ /^GROUP$/; $node = $node->getParentNode()) {
 	    my $v = $node->getAttribute("NAME");
@@ -170,6 +173,9 @@ sub do_import {
 		}
 		elsif ($f eq 'EXPIRYDATE' and ($itype eq 'software' or $v eq '00.00.0000')) {
 		    1;	# skip
+		}
+		elsif ($f eq 'LASTMODIFIED' and $main::opts{'modified'}) {
+		    $card_modified = date2epoch($v);
 		}
 		elsif ($f eq 'CUSTOMFIELDS') {
 		    if (my $customfieldnodes = $xp->findnodes('FIELD', $fieldnode)) {
@@ -226,10 +232,14 @@ sub do_import {
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, \@card_tags, \@card_notes, \@groups);
+	my $normalized = normalize_card_data($itype, \@fieldlist,
+	    { title	=> $card_title,
+	      tags	=> \@card_tags,
+	      notes	=> \@card_notes,
+	      folder	=> \@groups,
+	      modified	=> $card_modified });
 
-	# Returns list of 1 or more card/type hashes;possible one input card explodes to multiple output cards
-	# common function used by all converters?
+	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	my $cardlist = explode_normalized($itype, $normalized);
 
 	my @k = keys %$cardlist;
@@ -281,8 +291,15 @@ sub ccard_type_to_name {
     return ('Mastercard', 'Discover', 'VISA', 'American Express', 'JCB', 'Diners Club')[$index];
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
+# Places card data into a normalized internal form.
+#
+# Basic card data passed as $norm_cards hash ref:
+#    title
+#    notes
+#    tags
+#    folder
+#    modified
+# Per-field data hash {
 #    inkey	=> imported field name
 #    value	=> field value after callback processing
 #    valueorig	=> original field value
@@ -292,13 +309,7 @@ sub ccard_type_to_name {
 #    to_title	=> append title with a value from the narmalized card
 # }
 sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $notesref,
-	tags	=> $tags,
-	folder	=> $folder,
-    );
+    my ($type, $fieldlist, $norm_cards) = @_;
 
     for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	my $h = {};
@@ -321,7 +332,7 @@ sub normalize_card_data {
 		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
 		$h->{'keep'}		= $def->[3]{'keep'} // 0;
 		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
+		push @{$norm_cards->{'fields'}}, $h;
 		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
 		last;
 	    }
@@ -331,16 +342,16 @@ sub normalize_card_data {
     # map remaining keys to notes
     for (@$fieldlist) {
 	next if $_->[1] eq '';
-	push @{$norm_cards{'notes'}}, join ': ', @$_;
+	push @{$norm_cards->{'notes'}}, join ': ', @$_;
     }
 
-    $postprocess and ($postprocess)->($type, \%norm_cards);
-    return \%norm_cards;
+    return $norm_cards;
 }
 
 # Date converters
 # Password Depot validates date input on Date types.  Dates are stored in several formats:
-#     mm/yyyy		fields: IDS_CardExpires
+#     mm/yyyy			fields: IDS_CardExpires
+#     dd.mm.yyyy hh:mm:ss 	fields: LASTMODIFIED, CREATED, LASTACCESSED
 sub parse_date_string {
     local $_ = $_[0];
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
@@ -350,6 +361,9 @@ sub parse_date_string {
 	if (check_date($+{'y'}, $m, 1)) {
 	    return ($+{'y'}, $m, 1);
 	}
+    }
+    elsif (my $t = Time::Piece->strptime($_, "%d.%m.%Y %H:%M:%S")) {	# dd.mm.yyyy hh:mm:ss
+	return $t;
     }
 
     return undef;
@@ -366,6 +380,11 @@ sub days2epoch {
 
     my ($year,$month,$day) = Add_Delta_Days(1899, 12, 31, $days - 1);
     return timelocal(0, 0, 0, $day, $month - 1, $year);
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 
 1;
