@@ -4,6 +4,8 @@ This project is a collection of utilities contributed by the 1Password community
 
 A huge hat tip to [@MrC](https://discussions.agilebits.com/profile/77142/MrC) for creating the convert_to_1p4 utility and contributing it to help as many people as possible. 
 
+**Caution:** Before working with your sensitive data in unencrypted format, it is a good idea to disable any automatic backup software that could potentially copy your unencrypted data to another location, especially if that location is the cloud. Once you've completed the conversion and securely deleted the unencrypted files, you can re-enable the service. Thanks to [@TechGuy2000](https://github.com/TechGuy2000) for the reminder!
+
 ## Using the Converters
 
 1. [Download the 1Password utilities](https://github.com/AgileBits/onepassword-utilities/archive/master.zip)
