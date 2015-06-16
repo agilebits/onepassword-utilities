@@ -1,30 +1,37 @@
-# Converting and Importing Data into 1Password
+# Converting for 1Password
 
-The script **convert_to_1p4.pl** can convert exported data from several password management programs into a 1PIF format that can be imported by 1Password.
-The following password management programs are currently supported:
+The **convert_to_1p4** scripts convert exported data from various password management programs into a format that can be imported by 1Password, or suitable for printing.  The table below lists the currently supported password management programs, along with the converter's name, and the purpose of the converter.
 
-* Clipperz
-* Data Guardian
-* DataVault
-* EssentialPIM
-* eWallet
-* Handy Safe
-* Keepass 2
-* KeepassX
-* OS X Keychain
-* Passpack
-* Password Depot
-* PasswordWallet
-* LastPass
-* mSecure
-* Safe in Cloud
-* SafeWallet
-* SplashID
+## Supported Converters
+
+Password Manager | Converter Name | Purpose | Minimal Version or Version Tested
+|:-------|:-------|
+1Password | onepif2html | printing | 1Password 4
+Clipperz | clipperz | importing | the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014
+Data Guardian | dataguardian | importing | OS X: 3.2; Windows: 3.2
+DataVault | datavault | importing | OS X: 5.2.39; Windows: 5.1.32
+EssentialPIM | essentialpim | importing | Windows: 6.04
+eWallet | ewallet | importing | OS X: 7.3; Windows: 7.6.4
+Handy Safe | handysafe | importing | OS X: 1.02; Windows: Handy Safe Desktop Professional 3.01
+IronKey Identity Manager | ironkeyim | importing | Windows: firmware 4.0.5, software 3.4.3.2 (export to XML is available in software 2.5.1.0 onward)
+Keepass 2 | keepass2 | importing | Windows: 2.26
+KeepassX | keepassx | importing | OS X: .0.4.3 (version 2.0 alpha does not support exporting - use KeePass 2.x to read a KeePassX 2.0 database and export it as XML)
+Keychain, OS X | keychain | importing | OS X 10.9.5, 10.10
+LastPass | lastpass | importing | Browser-dependent extension; various versions exist (version 3.1.54 Firefox/Windows tested)
+mSecure | msecure | importing | OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
+Norton Identity Safe | nortonis | importing | Windows: tested with 2014.7.11.42; OS X: untested (no trial version available - should work - please report your results)
+Passpack | passpack | importing | Web version 7.7.14 tested on OS X and Windows
+Password Depot | passworddepot | importing | Windows: 8.1.1
+PasswordWallet | passwordwallet | importing | OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
+Safe in Cloud | safeincloud | importing | OS X: 1.6; Windows: 2.8
+SafeWallet | safewallet | importing | OS X 1.2; Windows: 2.4.1.2, 3.0.7
+SplashID | splashid | importing | OS X: 7.2.2; Windows: 7.2.4
+vCard, OS X Contacts | vcard | importing | OS X: 10.10.3 tested, vCard version 3.0
 
 ## Requirements
 
 The script is a Perl script.  You will run it in a command shell under OS X using the
-**Terminal** application or under Windows using the command shell.
+**Terminal** application or under Windows using the Windows command shell **cmd.exe**.
 
 ### OS X
 - 1Password for Mac, version 4.0 or higher
@@ -32,50 +39,21 @@ The script is a Perl script.  You will run it in a command shell under OS X usin
 ### Windows
 
 - 1Password for Windows, version 4.1.0.520 or higher
-- [Strawberry Perl](http://strawberryperl.com/releases.html) version 5.16.3.1 (*not* 5.18 or later)
+- [Strawberry Perl](http://strawberryperl.com/releases.html) portable version 5.16.3.1 (*not* 5.18 or later)
 
-### Password Manager Version Requirements
+### Additional Requirements
 
-The following list of password managers indicate the software version and platform used for export and conversion testing.  It is not possible to test all versions on all the platform variations, nor would it be a worthwhile venture.  Minor version differences generally should not matter (unless noted), so you can try the export and conversion.  The converters assume the export and conversion are to be done on the same platform.  You are welcome to report any issues you find.
+The **Supported Converters** table above indicates the minimal software versions required or tested, and the platform used for export and conversion.  It is not possible (nor would it be worthwhile) to test all versions on all the platform variations.  Minor version differences generally should not matter (unless noted), so you can try the export and conversion.
 
-* Clipperz: the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014.
+The converters require that both export and conversion are performed on the same OS platform (this .
 
-* Data Guardian: OS X: 3.2; Windows: 3.2
-
-* DataVault: OS X: 5.2.39; Windows: 5.1.32
-
-* EssentialPIM: Windows: 6.04
-
-* eWallet: OS X: 7.3; Windows: 7.6.4
-
-* Handy Safe: OS X: 1.02; Windows: Handy Safe Desktop Professional 3.01
-
-* KeePass 2: Windows: 2.26
-
-* KeepassX: OS X: .0.4.3 (version 2.0 alpha does not support exporting - use KeePass 2.x to read a KeePassX 2.0 database and export it as XML).
-
-* Keychain (OS X): OS X 10.9.5, 10.10
-
-* LastPass: LastPass is a browser-dependent extension, and various versions exist (version 3.1.54 Firefox/Windows tested)
-
-* mSecure: OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
-
-* Passpack: Web version 7.7.14 tested on OS X and Windows
-
-* Password Depot 2: Windows: 8.1.1
-
-* PasswordWallet: OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
-
-* Safe in Cloud: OS X: 1.6; Windows: 2.8
-
-* SafeWallet: OS X 1.2; Windows: 2.4.1.2, 3.0.7
-
-* SplashID Safe: OS X: 7.2.2; Windows: 7.2.4
+You are welcome to report any issues you encounter.
 
 ## Instructions
 
-The following instructions will guide you through the specifics required to export your wallet data, convert it, and import it into 1Password.  Instructions specific to either OS X or Windows will be noted below.  In addition, instructions specific to a given password manager will be noted in a separate section below.  Finally, these instructions assume you have
-placed the **convert_to_1p4** folder complete with its contents onto your Desktop.
+The following instructions will guide you through the specific steps required to export your password manager's data, convert it, and import it into 1Password (or print it).  Instructions specific to either OS X or Windows will be noted below.  In addition, instructions specific to a given password manager will be noted in a separate section below.
+
+** Note**: these instructions assume you have placed the **convert_to_1p4** folder complete with its contents onto your Desktop.
 
 
 ### 1. Verify Requirements
@@ -86,12 +64,12 @@ you are using an earlier version, you will need to update 1Password to properly 
 OS X includes Perl, so no additional software is required.
 
 Windows users will need to download the portable version of Strawberry Perl.  Select the appropriate  [32-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-64bit-portable.zip) version of Strawberry Perl.  When you are
-done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installations instructions are noted in Step 2 below.
+done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 2 below.
 
 ### 2. Open the Command Line Shell
 
 On OS X, open **Terminal** (under `Applications > Utilities`, or type **Terminal.app** in Spotlight and select
-it under Applications).  When a Terminal window opens, type (or better still, copy and paste):
+it under Applications).  When a Terminal window opens, type (or better still, copy and paste) the command:
 
     cd Desktop/convert_to_1p4
 
@@ -111,77 +89,77 @@ The following one-time commands will be entered into the just-opened command lin
 
   * __2e.__ Enter the command `cpan XML::XPath` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
 
-The following command changes the working directory to the convert_to_1p4 directory you placed on your Desktop:
+The following command changes the working directory to the **convert_to_1p4** directory you placed on your Desktop:
 
   * __2f.__ Enter the command `cd %USERPROFILE%\Desktop\convert_to_1p4` and hit Enter.
 
 ### 3. Export Your Data
 
-See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 4 when the data is exported.  Note that some password managers support attachments and may or may not support exporting these attachments.  Regardless, convert_to_1p4 does not support attachment conversion.
+See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 4 when the data is exported.  Note that some password managers support attachments and may or may not support exporting these attachments.  Regardless, **convert_to_1p4** does *not* support attachment conversion.
 
 ### 4. Execute the Perl Script
 
 You are about to convert your data.  The script only reads the file you exported from your password manager, and does not touch your password manager's original data file, nor does it transmit any data across a network.  Since the script is readable by anyone, you are free and welcome to examine it and ask any questions should you have any concerns.
 
-**Note**: The command below contains the generic term *converter_name* as a placeholder - when typing the command, instead of typing this generic *converter_name*, type the name of the desired converter.  The list of currently supported converters is:
+Find the name of your converter from the list of **Supported Converters** at the top of this guide.  You'll use that converter name in the command below, where you see *name_of_converter*.  For example, if you were converting data exported from Password Depot, *name_of_converter* would be *passworddepot*.
 
-- clipperz
-- dataguardian
-- datavault
-- essentialpim
-- ewallet
-- handysafe
-- keepass2
-- keepassx
-- keychain
-- lastpass
-- msecure
-- passpack
-- passworddepot
-- passwordwallet
-- safeincloud
-- safewallet
-- splashid
-
-The list of supported converters can also be output by using the `--help` option, for example:
+**Note**: The list of supported converters can also be output by using the `--help` option, for example, the command:
 
     perl convert_to_1p4.pl --help.
-
-Now, let's enter the proper conversion command.
-
-On OS X, in the Terminal window, enter the command (**Yosemite note**: replace the word `perl` below with `perl5.16`):
-
-
-    perl convert_to_1p4.pl converter_name -v ../pm_export.txt
     
+outputs:
 
-On Windows, in the command shell, enter the command:
+    Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
-    perl convert_to_1p4.pl converter_name -v ..\pm_export.txt
+    converters:
+        clipperz dataguardian datavault essentialpim ewallet handysafe keepass2 keepassx keychain
+        lastpass msecure onepif2html passpack passworddepot passwordwallet safeincloud safewallet
+        splashid vcard
+
+    specify one of the converters above on the command line to see complete options
+
+Now, let's enter the command that performs the conversion.  In the Terminal window (OS X) or the command window (Windows), enter the appropriate command below for your OS version, replacing *name_of_converter* with the relevant converter name for your password manager, and replacing *name_of_export_file* with the name of your password manager's export file:
+
+- **OS X Yosemite (10.10)**
+ 
+      perl5.16 convert_to_1p4.pl name_of_converter -v ../name_of_export_file
+    
+- **OS X prior to Yosemite**
+
+      perl convert_to_1p4.pl name_of_converter -v ../name_of_export_file
+
+- **Windows**
+
+      perl convert_to_1p4.pl name_of_converter -v ..\name_of_export_file
 
 Hit `Enter` after you've entered the correct command.  See **Note** below.
 
-The `-v` option will cause the script to indicate the number of records imported and converted (per type) to the 1PIF file. 
+The `-v` option (verbose) tells the script to state the number of records imported from the password manager's export file, and exported (per category) to the final output file. 
 
-**Note**: The command line above assumes that your Desktop contains:
+Again, the command line above assumes that your Desktop contains:
 
-* the exported password manager text file **pm_export.txt** 
-* the folder `convert_to_1p4` on OS X or
-* the folder `convert_to_1p4` on Windows
+* the text file exported from your password manager
+* the folder `convert_to_1p4`
  
-and the `convert_to_1p4` folder contains the `convert_to_1p4.pl` script and all of its accompanying modules.  It also assumes you've replaced the generic term *converter_name* with the specific converter you need to do the conversion.
+and the `convert_to_1p4` folder contains the `convert_to_1p4.pl` script and all of its accompanying modules.  It also assumes you've replaced the generic placeholder terms *name_of_converter* with the specific converter you need to do the conversion, and *name_of_export_file* with the name of your password manager's export file.
 
-### 5. Import 1PIF into 1Password
+### 5. Import into 1Password or Print
 
-If the conversion was successful, there will be a file named **1P4_import.1pif** on your Desktop.  To Import this file, use the 1Password  `File > Import` menu and select the file 1P4_import.1pif.
+If the conversion was successful, there will be a file named **1P_import.1pif** on your Desktop, or if you used the **onepif2html** converter, a file named **1P_print.html**.
 
-If the 1PIF import is successful, all of your password manager's records will now be available in 1Password.  These records may require some clean-up, as some or your password manager's fields may not safely map into some 1Password fields, or the data may be problematic (certain ambiguous date fields, for example). Any unmapped fields will be pushed to an entry's Notes area, so the data will be available for you within the 1Password entry.  In addition, a single entry from your password manager may convert into multiple 1Password entries.  The converter tries to place data in the right place inside of 1Password, and when it is unable to, the notes section of an entry or the Secure Notes category become the catch-all locations.  See **Additional Notes** below for more information.
+- Importing
+
+  To Import the **1P_import.1pif** file into 1Password, use 1Password's `File > Import` menu and select the file **1P_import.1pif**.
+
+  If the 1PIF import is successful, all of your password manager's records will now be available in 1Password.  These records may require some clean-up, as some or your password manager's fields may not safely map into some 1Password fields, or the data may be problematic (certain ambiguous date fields, for example). Any unmapped fields will be pushed to an entry's Notes area, so the data will be available for you within the 1Password entry.  In addition, a single entry from your password manager may convert into multiple 1Password entries.  The converter tries to place data in the right place inside of 1Password, and when it is unable to, the notes section of an entry or the Secure Notes category become the catch-all locations.  See **Additional Notes** below for more information.
+
+- Printing
+
+  To Print the file named **1P_print.html**, open and view the file with your favorite browser, and use its Print command.  You may want to configure various print options before printing out the document.
 
 ### 6. Securely Remove Exported Data
 
-As soon as you are completed the import into 1Password, be sure to securely delete the exported pm_export.txt file you
-created in Step 3, as well as the import file created by the converter script in Step 4, since these
-contain your unencrypted data.
+As soon as you have completed the import into 1Password, or printing of your exported data, be sure to securely delete the exported file you created in Step 3, as well as the file created by the converter script in Step 4 (1P_import.1pif, 1P_print.html), since these contain your unencrypted data.
 
 ## Miscellaneous Notes
 
@@ -207,9 +185,10 @@ $ perl convert_to_1p4.pl ewallet --help
 Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
 converters:
-    clipperz ewallet handysafe keepass2 keepassx keychain lastpass msecure passworddepot
-    safeincloud safewallet splashid
-
+    clipperz dataguardian datavault essentialpim ewallet handysafe keepass2 keepassx keychain
+    lastpass msecure onepif2html passpack passworddepot passwordwallet safeincloud safewallet
+    splashid vcard
+    
 options:
     -d or --debug              # enable debug output
     -e or --exptypes <list>    # comma separated list of one or more export types from list below
@@ -282,9 +261,19 @@ guide [Import your data](https://guides.agilebits.com/knowledgebase/1password4/e
 
 ## Exporting from your Password Manager
 
-**Reminder**: these instructions assume that you save your export data file to your Desktop using the name **pm_export.txt**.  On Windows, file extensions for common file types are hidden by default, so be sure to check the file name ultimately created after exporting the data.  You may have to adjust commands above to reflect the actual name of the export file created.
+**Reminder**: these instructions assume that you take note of the name you use to create your export data file, and use that name in the commands above in Step 4, and that you place that file onto your Desktop.  On Windows, file extensions for common file types are hidden by default, so be sure to check the file name ultimately created after exporting the data.  You will need to adjust the commands above to reflect the actual name of the export file created, specifically the *name_of_export_file* file in the conversion command.  Some suggested file names will be provided, but you are free to choose the export file's name.
 
 Find the section below for your password manager, and follow the instructions.  Proceed to Step 4 above when the export is complete.
+
+### ● 1Password (for printing)
+
+The **onepif2html** converter is used for printing out your 1Password entries.  Launch 1Password, and export its database as a 1PIF export file using the `File > Export > All Items...` menu item (or chose the `Selected Items` sub-menu if you only want the selected items to be exported).  Enter your Master Password when requested, and click `OK`.  Navigate to your **Desktop** folder in the *Export* dialog, and in the *File name* area, enter the name **UNENCRYPTED_DATA**.  Set the File Format to `1Password Interchange Format (.1pif)` if it is not already selected.  Click `Save`, and you should now have your data exported as as a 1PIF file by the name above on your Desktop.  You may now quit 1Password.
+
+**Note**: After export, 1Password for Mac places the 1PIF file into a folder with the name placed in the *File name* area - it will open this folder after the export has completed.  Inside will be a file named **data.1pif**.  This is the data file you will be working with.  You might want to drag this to your Desktop for convenience.
+
+**Note**: The formatting of the data in the resulting html file is controlled by a combination of an XSLT XML stylesheet and CSS.  This data is embedded at the end of the **onepif2html** converter, and can be customized to suit your needs.
+
+---
 
 ### ● Clipperz
 Launch and log into the clipperz web interface, and export its database to the JSON format.  Select the **data** tab, in the
@@ -297,7 +286,7 @@ with the name **pm_export.txt** (the `Save As` pulldown) and select your Desktop
 
 On Windows, open Notepad, and paste the text into the new document.  Save the file with the name **pm_export.txt** (`File > Save As`), select the Desktop folder as the destination, and in the `Encoding` pulldown, select `UTF-8`.
 
-You should close the JSON export Clipperz web page, since it contains your unencrypted data.  Also, since your data is on the clipboard, you should copy some other text to clear the clipboard, and remove any clipboard manager entries if you have a clipboard manager program installed. It is possible that your browser has also cached the exported data.  You may now close the main clipperz page.
+You should close the JSON export Clipperz web page, since it contains your unencrypted data.  Also, since your data is on the clipboard, you should copy some other text to clear the clipboard, and remove any clipboard manager entries if you have a clipboard manager program installed. It is possible that your browser has also cached the exported data.  You may now close the main Clipperz page.
 
 The Clipperz converter currently supports only English field names.
 
@@ -313,7 +302,7 @@ Note: Data Guardian does not construct a reliable CSV file.  In certain cases, i
 
 ### ● DataVault
 
-Launch DataVault and export its database to a text file using the `Tools > Export` menu item.  Select the **All Items (DVX, CSV)** choice, and click `OK`.  In the *Save As* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.csv** to your Desktop, leaving the **Save as type** set to *CSV files (.csv files)*. You may now quit DataVault.  Rename the file **pm_export.csv** on the Desktop to **pm_export.txt** so that the remainder of the instructions above will be consistent (DataVault does not allow exporting a file with a .txt suffix).
+Launch DataVault and export its database to a text file using the `Tools > Export` menu item.  Select the **All Items (DVX, CSV)** choice, and click `OK`.  In the *Save As* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.csv** to your Desktop, leaving the **Save as type** set to *CSV files (.csv files)*. You may now quit DataVault.
 
 Note: DataVault has several essentially identical templates, which are indistinguishable in the CSV export.  These are treated as a single DataVault template, and are mapped into 1Password categories.  These are:
 
@@ -357,9 +346,15 @@ Navigate to your **Desktop** folder in the Export File dialog, and in the *File 
 
 ---
 
+### ● IronKey Identity Manager
+
+Insert and unlock your IronKey device.  From the IronKey Control Panel, launch Identity Manager.  From the `Identity Manager` menu, select the `Backup > Export as Text or XML` item.
+Click `OK` when export warning dialog appears (e.g. *The information in exported file will not be encrypted.  Would you like to export your database to a file?*).  Navigate to your **Desktop** folder, and save the file with the name **pm_export.xml** to your Desktop.  Ensure that **Xml files** is set as the *Save as type:* and click `Save`.  You should receive a final cautionary dialog indicating that the database has been successfully exported and that its contents are unencrypted.  Click `OK` to continue.  You may now close Identity Manager.
+
+---
+
 ### ● KeePass 2
-Launch KeePass 2, and export its database to an XML export file using the ```File > Export ...``` menu item, and select the KeePass XML (2.x) format.  In the `File: Export to:` section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your **Desktop** folder, and in
-the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
+Launch KeePass 2, and export its database to an XML export file using the ```File > Export ...``` menu item, and select the KeePass XML (2.x) format.  In the `File: Export to:` section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your **Desktop** folder, and in the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
 
 ---
 
@@ -401,6 +396,14 @@ the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you s
 
 ---
 
+### ● Norton Identity Safe
+
+Launch Norton Identity Safe, and export its database as a CSV export file using the Settings (gear) icon, and selecting the `Import/Export` tab.  Select the *Plain Text - CSV file (Logins and Notes only)* radio button, and click `Export`.  Enter your vault password when the *Password Protected Item* dialog appears, and click `OK`.  Navigate to your **Desktop** folder in the *Save As* dialog, and in the *File name* area, enter the name **pm_export.csv**, and click `Save`.  Click `OK` when the successful export dialog appears.  You may now quit Norton Identity Safe.
+
+**Note**:  Norton Identity Safe does not export Wallet items (Credit Card, Bank Account, or Identity) - it only exports Login and Note items.  Also, it does not export Tags.
+
+---
+
 ### ● Passpack
 
 Launch the browser you normally use with Passpack and unlock your vault. From the Passpack toolbar menu, select `Tools` and then on the next screen, select `Export`.  Select the option `Comma Separated Values`, and the other option `All entries`.  Now select the columns to export under *Click on the name of the first field to export* - select these one at a time in the same order as presented on the screen: **Name**, **User ID**, **Password**, **Link**, **Tags**, **Notes** and **Email**.  Now click the `Continue` button.  A new window will appear with your exported data.  Select all the text data in the text box and copy it.  You will save it with either Notepad (on Windows) or TextEdit (on OS X) as follows:
@@ -413,7 +416,7 @@ On OS X, open TextEdit, and go to the menu `TextEdit > Preferences`. In the New 
 
 ### ● Password Depot
 
-Launch Password Depot.  On the left side, select your password file's name (or the highest level folder you want to export).  Select the `Tools` ribbon menu item, click the `Export` button, and select the `Export Wizard` item.  Enter your Password Depot password when the dialog appears, and press `OK`.  The *Export format* should be left as *Extensible Markup Language format (**.xml)*.  Click the `Browse` button, navigate to your **Desktop** folder and in the *File name* area, enter the name **pm_export** (note: you cannot use the .txt suffix - your file will be named **pm_export.xml** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.xml** where appropriate).  Be sure the *Original folder* pulldown has the top-level folder you want exported (the top level is the entire contents of the password file).  Click `Next` to complete the export and then click `Finish` to close out the wizard.  You should now have your data exported as an XML text file by the name above on your Desktop.  You may now quit Password Depot.
+Launch Password Depot.  On the left side, select your password file's name (or the highest level folder you want to export).  Select the `Tools` ribbon menu item, click the `Export` button, and select the `Export Wizard` item.  Enter your Password Depot password when the dialog appears, and press `OK`.  The *Export format* should be left as *Extensible Markup Language format (**.xml)*.  Click the `Browse` button, navigate to your **Desktop** folder and in the *File name* area, enter the name **pm_export.xml**.  Be sure the *Original folder* pulldown has the top-level folder you want exported (the top level is the entire contents of the password file).  Click `Next` to complete the export and then click `Finish` to close out the wizard.  You should now have your data exported as an XML text file by the name above on your Desktop.  You may now quit Password Depot.
 
 **Note**: Password Depot supports formatted text in Information items.  It does not, however, export this formatting information - only the raw text is exported.
 
@@ -425,7 +428,6 @@ Launch PasswordWallet, and export its database as a text file using the `File > 
 
 ---
 
-
 ### ● Safe in Cloud
 Launch Safe in Cloud, and export its database to an XML file using the `File > Export > As XML` menu.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit Safe in Cloud.
 
@@ -436,11 +438,15 @@ Launch SafeWallet, and export its database to an XML file.  On OS X, use the `Fi
 
 Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  On Windows, click the `Finish` button and press `OK` when the successful export dialog appears.  You may now quit SafeWallet.
 
-
 ---
 
 ### ● SplashID Safe
-Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: you cannot use the .txt suffix - your file will be named **pm_export.vld** after exporting the data - please make adjustments to the commands above, replacing the **.txt** suffix with **.vld** where appropriate).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
+Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vld** after exporting the data).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
+
+---
+
+### ● vCard (from OS X Contacts)
+Launch the OS X Contacts app, select the desired contacts, and export them to a vCard file using the `File > Export... > Export vCard...` menu.  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vcf** after exporting the data).  Click `Save`.  You may now quit Contacts.
 
 ---
 
@@ -478,6 +484,6 @@ If the `--folders` option was not used, you can place a set of tagged 1Password 
 ---
 
 ## Questions, Help and Requests
-If you have questions, issues, or requests, feel free to ask for assistance in the specific forum thread: TBD
+If you have questions, issues, or requests, feel free to ask for assistance in the forum thread: https://discussions.agilebits.com/discussion/30286/mrcs-convert-to-1password-utility/p1
 
 -MrC
