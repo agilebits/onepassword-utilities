@@ -1,3 +1,14 @@
+Version 1.05:
+  - New: OS X Contacts converter (vcard), converts Contacts exports into identity entries.
+  - New: 1PIF to HTML converter (onepif2html) for record printouts.
+  - New: IronKey Identity Manager converter now available.
+  - New: Norton Identity Safe converter now available.
+  - New: Country code patterns added to convert common country strings into 1Password country codes (used for
+    address types).
+  - Change: default output file is now 1P_export.1pif.
+  - Change: README modified to accommodate usage of new onepif2html converter.
+  - Fix: README.pdf had white-on-white text when viewed in Acrobat.
+
 Version 1.04:
   - New: Data Guardian converter now available.
   - New: Datavault converter now available.

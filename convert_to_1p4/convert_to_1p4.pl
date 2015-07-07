@@ -18,7 +18,7 @@ use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.04";
+my $version = "1.05";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -59,7 +59,7 @@ for (qw/imp exp/) {
 }
 
 our %opts = (
-    outfile => join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P4_import'),
+    outfile => join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P_import'),
     watchtower => 1,
     folders => 0,			# folder creation is disabled by default
 ); 

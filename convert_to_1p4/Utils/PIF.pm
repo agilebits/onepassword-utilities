@@ -1,10 +1,10 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.03;
+package Utils::PIF 1.04;
 
 our @ISA	= qw(Exporter);
-our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized);
+our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized get_items_from_1pif typename_to_typekey);
 #our @EXPORT_OK	= qw();
 
 use v5.14;
@@ -24,24 +24,32 @@ use Utils::Utils qw(verbose debug bail pluralize unfold_and_chop myjoin);
 
 my $agilebits_1pif_entry_sep_uuid_str = '***5642bee8-a5ff-11dc-8314-0800200c9a66***';
 
-my %typeMap = (
-    bankacct =>		'wallet.financial.BankAccountUS',
-    creditcard =>	'wallet.financial.CreditCard',
-    database =>		'wallet.computer.Database',
-    driverslicense =>	'wallet.government.DriversLicense',
-    email =>		'wallet.onlineservices.Email.v2',
-    identity =>		'identities.Identity',
-    login =>		'webforms.WebForm',
-    membership =>	'wallet.membership.Membership',
-    note =>		'securenotes.SecureNote',
-    outdoorlicense =>	'wallet.government.HuntingLicense',
-    passport =>		'wallet.government.Passport',
-    rewards =>		'wallet.membership.RewardProgram',
-    server =>		'wallet.computer.UnixServer',
-    socialsecurity =>	'wallet.government.SsnUS',
-    software =>		'wallet.computer.License',
-    wireless =>		'wallet.computer.Router',
+our %typeMap = (
+    bankacct =>		{ typeName => 'wallet.financial.BankAccountUS',		title => 'Bank Account' },
+    creditcard =>	{ typeName => 'wallet.financial.CreditCard',		title => 'Credit Card' },
+    database =>		{ typeName => 'wallet.computer.Database',		title => 'Database' },
+    driverslicense =>	{ typeName => 'wallet.government.DriversLicense',	title => 'Drivers License' },
+    email =>		{ typeName => 'wallet.onlineservices.Email.v2',		title => 'Email' },
+    identity =>		{ typeName => 'identities.Identity',			title => 'Identity' },
+    login =>		{ typeName => 'webforms.WebForm',			title => 'Login' },
+    membership =>	{ typeName => 'wallet.membership.Membership',		title => 'Membership' },
+    note =>		{ typeName => 'securenotes.SecureNote',			title => 'Secure Note' },
+    outdoorlicense =>	{ typeName => 'wallet.government.HuntingLicense',	title => 'Outdoor License' },
+    passport =>		{ typeName => 'wallet.government.Passport',		title => 'Passport' },
+    rewards =>		{ typeName => 'wallet.membership.RewardProgram',	title => 'Reward Program' },
+    server =>		{ typeName => 'wallet.computer.UnixServer',		title => 'Server' },
+    socialsecurity =>	{ typeName => 'wallet.government.SsnUS',		title => 'Social Security Number' },
+    software =>		{ typeName => 'wallet.computer.License',		title => 'Software License' },
+    wireless =>		{ typeName => 'wallet.computer.Router',			title => 'Wireless Router' },
 );
+
+my %typenames_to_typekeys;	# maps typeName --> key from %typeMap above
+
+$typenames_to_typekeys{$typeMap{$_}{'typeName'}} = $_	for keys %typeMap;
+
+sub typename_to_typekey {
+    return $typenames_to_typekeys{$_[0]};
+}
 
 our $sn_main		= '.';
 our $sn_branchInfo	= 'branchInfo.Branch Information';
@@ -277,6 +285,226 @@ my %pif_table = (
     ],
 );
 
+my %country_codes = (
+    ad => qr/^ad|Andorra$/i,
+    ae => qr/^ae|United Arab Emirates$/i,
+    af => qr/^af|Afghanistan$/i,
+    ag => qr/^ag|Antigua and Barbuda$/i,
+    al => qr/^al|Albania$/i,
+    am => qr/^am|Armenia$/i,
+    ao => qr/^ao|Angola$/i,
+    ar => qr/^ar|Argentina$/i,
+    at => qr/^at|Austria$/i,
+    au => qr/^au|Australia$/i,
+    az => qr/^az|Azerbaijan$/i,
+    ba => qr/^ba|Bosnia and Herzegovina$/i,
+    bb => qr/^bb|Barbados$/i,
+    bd => qr/^bd|Bangladesh$/i,
+    be => qr/^be|Belgium$/i,
+    bf => qr/^bf|Burkina Faso$/i,
+    bg => qr/^bg|Bulgaria$/i,
+    bh => qr/^bh|Bahrain$/i,
+    bi => qr/^bi|Burundi$/i,
+    bj => qr/^bj|Benin$/i,
+    bl => qr/^bl|Saint Barthélemy$/i,
+    bm => qr/^bm|Bermuda$/i,
+    bn => qr/^bn|Brunei Darussalam$/i,
+    bo => qr/^bo|Bolivia$/i,
+    br => qr/^br|Brazil$/i,
+    bs => qr/^bs|The Bahamas$/i,
+    bt => qr/^bt|Bhutan$/i,
+    bw => qr/^bw|Botswana$/i,
+    by => qr/^by|Belarus$/i,
+    bz => qr/^bz|Belize$/i,
+    ca => qr/^ca|Canada$/i,
+    cd => qr/^cd|Democratic Republic of the Congo$/i,
+    cf => qr/^cf|Central African Republic$/i,
+    cg => qr/^cg|Republic of the Congo$/i,
+    ch => qr/^ch|Switzerland$/i,
+    ci => qr/^ci|Côte d’Ivoire$/i,
+    cl => qr/^cl|Chile$/i,
+    cm => qr/^cm|Cameroon$/i,
+    cn => qr/^cn|China$/i,
+    co => qr/^co|Colombia$/i,
+    cr => qr/^cr|Costa Rica$/i,
+    cs => qr/^cs|Czech Republic$/i,
+    cu => qr/^cu|Cuba$/i,
+    cv => qr/^cv|Cape Verde$/i,
+    cy => qr/^cy|Cyprus$/i,
+    cz => qr/^cz|Czech Republic$/i,
+    de => qr/^de|Germany$/i,
+    dj => qr/^dj|Djibouti$/i,
+    dk => qr/^dk|Denmark$/i,
+    dm => qr/^dm|Dominica$/i,
+    do => qr/^do|Dominican Republic$/i,
+    dz => qr/^dz|Algeria$/i,
+    ec => qr/^ec|Ecuador$/i,
+    ee => qr/^ee|Estonia$/i,
+    eg => qr/^eg|Egypt$/i,
+    er => qr/^er|Eritrea$/i,
+    es => qr/^es|Spain$/i,
+    et => qr/^et|Ethiopia$/i,
+    fi => qr/^fi|Finland$/i,
+    fj => qr/^fj|Fiji$/i,
+    fk => qr/^fk|Falkland Islands$/i,
+    fm => qr/^fm|Micronesia$/i,
+    fo => qr/^fo|Faroe Islands$/i,
+    fr => qr/^fr|France$/i,
+    ga => qr/^ga|Gabon$/i,
+    gd => qr/^gd|Grenada$/i,
+    ge => qr/^ge|Georgia$/i,
+    gh => qr/^gh|Ghana$/i,
+    gi => qr/^gi|Gibraltar$/i,
+    gl => qr/^gl|Greenland$/i,
+    gm => qr/^gm|The Gambia$/i,
+    gn => qr/^gn|Guinea$/i,
+    gp => qr/^gp|Guadeloupe$/i,
+    gq => qr/^gq|Equatorial Guinea$/i,
+    gr => qr/^gr|Greece$/i,
+    gs => qr/^gs|South Georgia and South Sandwich Islands$/i,
+    gt => qr/^gt|Guatemala$/i,
+    gw => qr/^gw|Guinea-Bissau$/i,
+    gy => qr/^gy|Guyana$/i,
+    hk => qr/^hk|Hong Kong$/i,
+    hn => qr/^hn|Honduras$/i,
+    hr => qr/^hr|Croatia$/i,
+    ht => qr/^ht|Haiti$/i,
+    hu => qr/^hu|Hungary$/i,
+    id => qr/^id|Indonesia$/i,
+    ie => qr/^ie|Ireland$/i,
+    il => qr/^il|Israel$/i,
+    im => qr/^im|Isle of Man$/i,
+    in => qr/^in|India$/i,
+    iq => qr/^iq|Iraq$/i,
+    ir => qr/^ir|Iran$/i,
+    is => qr/^is|Iceland$/i,
+    it => qr/^it|Italy$/i,
+    jm => qr/^jm|Jamaica$/i,
+    jo => qr/^jo|Jordan$/i,
+    jp => qr/^jp|Japan$/i,
+    ke => qr/^ke|Kenya$/i,
+    kg => qr/^kg|Kyrgyzstan$/i,
+    kh => qr/^kh|Cambodia$/i,
+    ki => qr/^ki|Kiribati$/i,
+    km => qr/^km|Comoros$/i,
+    kn => qr/^kn|Saint Kitts and Nevis$/i,
+    kp => qr/^kp|North Korea$/i,
+    kr => qr/^kr|South Korea$/i,
+    kw => qr/^kw|Kuwait$/i,
+    ky => qr/^ky|Cayman Islands$/i,
+    kz => qr/^kz|Kazakhstan$/i,
+    la => qr/^la|Laos$/i,
+    lb => qr/^lb|Lebanon$/i,
+    lc => qr/^lc|Saint Lucia$/i,
+    li => qr/^li|Liechtenstein$/i,
+    lk => qr/^lk|Sri Lanka$/i,
+    lr => qr/^lr|Liberia$/i,
+    ls => qr/^ls|Lesotho$/i,
+    lt => qr/^lt|Lithuania$/i,
+    lu => qr/^lu|Luxembourg$/i,
+    lv => qr/^lv|Latvia$/i,
+    ly => qr/^ly|Libya$/i,
+    ma => qr/^ma|Morocco$/i,
+    mc => qr/^mc|Monaco$/i,
+    md => qr/^md|Moldova$/i,
+    me => qr/^me|Montenegro$/i,
+    mf => qr/^mf|Saint Martin$/i,
+    mg => qr/^mg|Madagascar$/i,
+    mh => qr/^mh|Marshall Islands$/i,
+    mk => qr/^mk|Macedonia$/i,
+    ml => qr/^ml|Mali$/i,
+    mm => qr/^mm|Myanmar$/i,
+    mn => qr/^mn|Mongolia$/i,
+    mo => qr/^mo|Macau$/i,
+    mq => qr/^mq|Martinique$/i,
+    mr => qr/^mr|Mauritania$/i,
+    mt => qr/^mt|Malta$/i,
+    mu => qr/^mu|Mauritius$/i,
+    mv => qr/^mv|Maldives$/i,
+    mw => qr/^mw|Malawi$/i,
+    mx => qr/^mx|Mexico$/i,
+    my => qr/^my|Malaysia$/i,
+    mz => qr/^mz|Mozambique$/i,
+    na => qr/^na|Namibia$/i,
+    nc => qr/^nc|New Caledonia$/i,
+    ne => qr/^ne|Niger$/i,
+    ng => qr/^ng|Nigeria$/i,
+    ni => qr/^ni|Nicaragua$/i,
+    nl => qr/^nl|Netherlands$/i,
+    no => qr/^no|Norway$/i,
+    np => qr/^np|Nepal$/i,
+    nr => qr/^nr|Nauru$/i,
+    nz => qr/^nz|New Zealand$/i,
+    om => qr/^om|Oman$/i,
+    pa => qr/^pa|Panama$/i,
+    pe => qr/^pe|Peru$/i,
+    pf => qr/^pf|French Polynesia$/i,
+    pg => qr/^pg|Papua New Guinea$/i,
+    ph => qr/^ph|Philippines$/i,
+    pk => qr/^pk|Pakistan$/i,
+    pl => qr/^pl|Poland$/i,
+    pr => qr/^pr|Puerto Rico$/i,
+    ps => qr/^ps|Palestinian Territories$/i,
+    pt => qr/^pt|Portugal$/i,
+    pw => qr/^pw|Palau$/i,
+    py => qr/^py|Paraguay$/i,
+    qa => qr/^qa|Qatar$/i,
+    re => qr/^re|Réunion$/i,
+    ro => qr/^ro|Romania$/i,
+    rs => qr/^rs|Serbia$/i,
+    ru => qr/^ru|Russia$/i,
+    rw => qr/^rw|Rwanda$/i,
+    sa => qr/^sa|Saudi Arabia$/i,
+    sb => qr/^sb|Solomon Islands$/i,
+    sc => qr/^sc|Seychelles$/i,
+    sd => qr/^sd|Sudan$/i,
+    se => qr/^se|Sweden$/i,
+    sg => qr/^sg|Singapore$/i,
+    sh => qr/^sh|Saint Helena$/i,
+    si => qr/^si|Slovenia$/i,
+    sk => qr/^sk|Slovakia$/i,
+    sl => qr/^sl|Sierra Leone$/i,
+    sm => qr/^sm|San Marino$/i,
+    sn => qr/^sn|Senegal$/i,
+    so => qr/^so|Somalia$/i,
+    sr => qr/^sr|Suriname$/i,
+    st => qr/^st|Sao Tome and Principe$/i,
+    sv => qr/^sv|El Salvador$/i,
+    sy => qr/^sy|Syria$/i,
+    sz => qr/^sz|Swaziland$/i,
+    td => qr/^td|Chad$/i,
+    tg => qr/^tg|Togo$/i,
+    th => qr/^th|Thailand$/i,
+    tj => qr/^tj|Tajikistan$/i,
+    tl => qr/^tl|Timor-Leste$/i,
+    tm => qr/^tm|Turkmenistan$/i,
+    tn => qr/^tn|Tunisia$/i,
+    to => qr/^to|Tonga$/i,
+    tr => qr/^tr|Turkey$/i,
+    tt => qr/^tt|Trinidad and Tobago$/i,
+    tv => qr/^tv|Tuvalu$/i,
+    tw => qr/^tw|Taiwan$/i,
+    tz => qr/^tz|Tanzania$/i,
+    ua => qr/^ua|Ukraine$/i,
+    ug => qr/^ug|Uganda$/i,
+    uk => qr/^uk|United Kingdom$/i,
+    us => qr/^us|United States$/i,
+    uy => qr/^uy|Uruguay$/i,
+    uz => qr/^uz|Uzbekistan$/i,
+    va => qr/^va|Vatican$/i,
+    vc => qr/^vc|Saint Vincent and the Grenadines$/i,
+    ve => qr/^ve|Venezuela$/i,
+    vi => qr/^vi|U.S. Virgin Islands$/i,
+    vn => qr/^vn|Vietnam$/i,
+    vu => qr/^vu|Vanuatu$/i,
+    ws => qr/^ws|Samoa$/i,
+    ye => qr/^ye|Yemen$/i,
+    yu => qr/^yu|Serbia and Montenegro$/i,
+    za => qr/^za|South Africa$/i,
+    zm => qr/^zm|Zambia$/i,
+    zw => qr/^zw|Zimbabwe$/i,
+);
+
 sub create_pif_record {
     my ($type, $card) = @_;
 
@@ -368,7 +596,7 @@ sub create_pif_record {
 	debug "  notes: ", unfold_and_chop $rec->{'secureContents'}{'notesPlain'};
     }
 
-    $rec->{'typeName'} = $typeMap{$type} // $typeMap{'note'};
+    $rec->{'typeName'} = $typeMap{$type}{'typeName'} // $typeMap{'note'}{'typeName'};
 
     if (exists $card->{'tags'}) {
 	push @{$rec->{'openContents'}{'tags'}}, ref($card->{'tags'}) eq 'ARRAY' ? (@{$card->{'tags'}}) : $card->{'tags'};
@@ -565,6 +793,7 @@ sub type_conversions {
 	# address is expected to be in hash w/keys: street city state country zip 
 	my $h = $cref->{'address'}{'value'};
 	# at the top level in secureContents, key 'address1' is used instead of key 'street'
+	$h->{'country'} = country_to_code($h->{'country'})	if $h->{'country'} and !exists $country_codes{$h->{'country'}};
 	my %ret = ( 'address1' => $h->{'street'}, map { exists $h->{$_} ? ($_ => $h->{$_}) : () } qw/city state zip country/ );
 	return %ret;
     }
@@ -650,10 +879,40 @@ sub check_pif_table {
     $errors and die "Errors in pif_table - please report";
 }
 
+sub get_items_from_1pif {
+    my $file = shift;
+    my @items;
+
+    open my $io, "<", $file
+	or bail "Unable to open 1PIF file: $file\n$!";
+
+    while ($_ = <$io>) {
+	chomp $_;
+	next if $_ eq $agilebits_1pif_entry_sep_uuid_str;
+	next if $_ =~ /"trashed":true[,}]/;		# skip items in the trash
+	push @items, decode_json $_;
+    }
+
+    close $io;
+    return \@items
+}
+
+
 sub to_string {
     return $_[0] 	if ref $_[0] eq '';
 
     return join('; ', map { "$_: $_[0]->{$_}" } keys %{$_[0]});
+}
+
+sub country_to_code {
+    for (keys %country_codes) {
+	if ($_[0] =~ $country_codes{$_}) {
+	    debug "\tcountry conversion: $_[0] --> $_";
+	    return $_	
+	}
+    }
+
+    return $_[0];
 }
 
 1;
