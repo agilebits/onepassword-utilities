@@ -5,7 +5,7 @@ The **convert_to_1p4** scripts convert exported data from various password manag
 ## Supported Converters
 
 Password Manager | Converter Name | Purpose | Minimal Version or Version Tested
-|:-------|:-------|
+:-------|:-------|:-------|:-------
 1Password | onepif2html | printing | 1Password 4
 Clipperz | clipperz | importing | the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014
 Data Guardian | dataguardian | importing | OS X: 3.2; Windows: 3.2
