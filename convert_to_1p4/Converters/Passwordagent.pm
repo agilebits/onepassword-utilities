@@ -1,8 +1,8 @@
-# PasswordWallet CSV export converter
+# Password Agent XML export converter
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Passwordwallet 1.01;
+package Converters::Passwordagent 1.00;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -19,100 +19,95 @@ binmode STDERR, ":utf8";
 
 use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
-use Text::CSV;
-
+use XML::XPath;
+use XML::XPath::XMLParser;
+use Time::Local qw(timelocal);
+use Time::Piece;
 
 my %card_field_specs = (
-    login =>			{ textname => '', fields => [
-	[ 'title',		0, qr/^title$/, ],
-	[ 'username',		0, qr/^username$/, ],
+    login =>                 { textname => undef, type_out => 'login', fields => [
+	[ 'username',		0, qr/^account$/, ],
 	[ 'password',		0, qr/^password$/, ],
-	[ 'url',		0, qr/^url$/, ],
-	[ 'notes',		0, qr/^notes$/, ],
+	[ 'url',		0, qr/^link$/, ],
     ]},
-    note =>			{ textname => '', fields => [
+    note =>                     { textname => '', fields => [
     ]},
 );
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
+my %groupid_map;
+
 sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-        'opts'          => [],
-    }
+	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
+			       'modified|m' ],
+			   ],
+    };
 }
 
 sub do_import {
     my ($file, $imptypes) = @_;
-
-    my $csv = Text::CSV->new ({
-	    binary => 1,
-	    allow_loose_quotes => 1,
-	    sep_char => "\t",
-	    eol => "\n",
-    });
-
-    open my $io, $^O eq 'MSWin32' ? "<:encoding(utf16LE)" : "<:encoding(utf8)", $file
-	or bail "Unable to open CSV file: $file\n$!";
-
     my %Cards;
-    my ($n, $rownum) = (1, 1);
+
+    {
+	local $/ = undef;
+	open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
+	$_ = <$fh>;
+	close $fh;
+    }
+
+    my $n = 1;
     my ($npre_explode, $npost_explode);
 
-    $csv->column_names(qw/title url username password notes category browser unused1 unused2/);
-    while (my $row = $csv->getline_hr($io)) {
-	debug 'ROW: ', $rownum++;
+    my $xp = XML::XPath->new(xml => $_);
 
-	my $itype = find_card_type($row);
+    my $entrynodes = $xp->findnodes('//entry');
+    foreach my $entrynode (@$entrynodes) {
+	my (@groups, $card_tags);
+	for (my $node = $entrynode->getParentNode(); my $parent = $node->getParentNode(); $node = $parent) {
+	    my $v = $xp->findvalue('name', $node)->value();
+	    next if $v eq 'Root';
+	    unshift @groups, $v   unless $v eq '';
+	}
+	$card_tags = join '::', @groups;
+	debug 'Group: ', $card_tags;
 
+	my (@card_group, $card_modified, @fieldlist);
+	# type: 0 == Login; 1 == Note
+	my $itype = $xp->findvalue('type', $entrynode)->value() == 1 ? 'note' : 'login';
+
+	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	# Grab the special fields and delete them from the row
-	my ($card_title, $card_notes, $card_tags) = @$row{qw/title notes category/};
-	delete @$row{qw/title notes category/};
+	my %cardfields = ();
+	for (qw/name account password link note date_added date_modified date_expire/) {
+	    $cardfields{$_} = $xp->findvalue($_, $entrynode)->value();
+	    debug "\t    Field: $_ = ", $cardfields{$_} // '';
+	}
+	my $card_title = $cardfields{'name'} // 'Untitled';
+	my $card_notes = $cardfields{'note'} // '';
+	delete $cardfields{$_}		for qw/name note/;
 
-	my @fieldlist;
-
-	# handle the special auto-type characters in username and password
-	#
-	# • Unicode: U+2022, UTF-8: E2 80 A2		pass,user: tab to next field
-	# ¶ Unicode: U+00B6, UTF-8: C2 B6		pass,user: carriage return, does auto-submit
-	# § Unicode: U+00A7, UTF-8: C2 A7		pass,user: adds delay
-	# ∞ Unicode: U+221E, UTF-8: E2 88 9E		pass,user: pause/resume auto-type
-	# « Unicode: U+00AB, UTF-8: C2 AB		pass,user: reverse tab
-	#
-	# pass through - referent Title may not be unique
-	# [:OtherEntryName:]				pass,login: uses value from the named entry
-
-	for (qw/username password/) {
-	    next unless $row->{$_} =~ /[\x{2022}\x{00B6}\x{00A7}\x{221E}\x{00AB}]/;
-
-	    $row->{$_} =~ s/(?:\x{00A7}|\x{221E})//g;				# strip globally: delay, pause/resume
-	    $row->{$_} =~ s/(?:\x{2022}|\x{00B6}|\x{00AB})+$//;			# strip from end: tab/reverse tab, auto-submit
-	    $row->{$_} =~ s/^(?:\x{2022}|\x{00B6}|\x{00AB})+//;			# strip from beginning: tab/reverse tab, auto-submit
-
-	    if ($row->{$_} =~ s/^(.+?)(?:\x{2022}|\x{00AB})+(.*)$/$1/) {	# split at tab-to-next-field char
-		my @a = split /(?:\x{2022}|\x{00AB})+/, $2;
-		for (my $i = 1; $i <= @a; $i++) {
-		    push @fieldlist, [ join('_', $_ , 'part', $i + 1)  =>  $a[$i - 1] ];
-		}
-	    }
-
-	    $row->{$_} =~ s/[\x{2022}\x{00B6}\x{00A7}\x{221E}\x{00AB}]//g;	# strip all remaining metcharacters now
+	if ($main::opts{'modified'}) {
+	    $card_modified = date2epoch($cardfields{'date_modified'});
+	    delete $cardfields{'date_modified'};
 	}
 
-	# Everything that remains in the row is the field data
-	for (keys %$row) {
-	    debug "\tcust field: $_ => $row->{$_}";
-	    push @fieldlist, [ $_ => $row->{$_} ];
+	for (keys %cardfields) {
+	    push @fieldlist, [ $_ => $cardfields{$_} ];			# done for confority with other converters - no inherent field order
 	}
 
-	my $normalized = normalize_card_data($itype, \@fieldlist, 
+	# From the card input, place it in the converter-normal format.
+	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
+	my $normalized = normalize_card_data($itype, \@fieldlist,
 	    { title	=> $card_title,
-	      notes	=> $card_notes =~ s/\x{00AC}/\n/gr,		# translate encoded newline: ¬ Unicode: U+00AC, UTF-8: C2 AC
-	      tags	=> $card_tags });
+	      tags	=> $card_tags,
+	      notes	=> $card_notes,
+	      folder	=> \@groups,
+	      modified	=> $card_modified });
 
 	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
 	my $cardlist = explode_normalized($itype, $normalized);
@@ -127,9 +122,6 @@ sub do_import {
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
 	$n++;
-    }
-    if (! $csv->eof()) {
-	warn "Unexpected failure parsing CSV: row $n";
     }
 
     $n--;
@@ -168,7 +160,7 @@ sub normalize_card_data {
 	    my ($inkey, $value) = @{$fieldlist->[$i]};
 	    next if not defined $value or $value eq '';
 
-	    if ($inkey =~ $def->[2]) {
+	    if (!defined $def->[2] or $inkey =~ $def->[2]) {
 		my $origvalue = $value;
 
 		if (exists $def->[3] and exists $def->[3]{'func'}) {
@@ -201,11 +193,23 @@ sub normalize_card_data {
     return $norm_cards;
 }
 
-sub find_card_type {
-    my $hr = shift;
-    my $type = ($hr->{'url'} ne '' or $hr->{'username'} ne '' or $hr->{'password'} ne '') ? 'login' : 'note';
-    debug "type detected as '$type'";
-    return $type;
+# Date converters
+#     d-mm-yyyy			keys: date_added, date_modified, date_expire
+sub parse_date_string {
+    local $_ = $_[0];
+    my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    #s#^(\d/\d{2}/\d{4})$#0$1#;
+    if (my $t = Time::Piece->strptime($_, "%m/%d/%Y")) {	# d/mm/yyyy
+	return $t;
+    }
+
+    return undef;
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 
 1;

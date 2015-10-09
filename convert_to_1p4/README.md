@@ -1,11 +1,10 @@
 # Converting for 1Password
 
-The **convert_to_1p4** scripts convert exported data from various password management programs into a format that can be imported by 1Password, or suitable for printing.  The table below lists the currently supported password management programs, along with the converter's name, and the purpose of the converter.
+The **convert_to_1p4** utility converts exported data from various password management programs into a format that can be imported by 1Password, or in the case of 1Password data, suitable for printing.  The table below lists the currently supported password management programs, along with the converter's name, and the purpose of the converter.
 
 ## Supported Converters
-
 Password Manager | Converter Name | Purpose | Minimal Version or Version Tested
-|:-------|:-------|
+:-------|:-------|:-------|:-------
 1Password | onepif2html | printing | 1Password 4
 Clipperz | clipperz | importing | the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014
 Data Guardian | dataguardian | importing | OS X: 3.2; Windows: 3.2
@@ -18,57 +17,57 @@ Keepass 2 | keepass2 | importing | Windows: 2.26
 KeepassX | keepassx | importing | OS X: .0.4.3 (version 2.0 alpha does not support exporting - use KeePass 2.x to read a KeePassX 2.0 database and export it as XML)
 Keychain, OS X | keychain | importing | OS X 10.9.5, 10.10
 LastPass | lastpass | importing | Browser-dependent extension; various versions exist (version 3.1.54 Firefox/Windows tested)
+LicenseKeeper | licensekeeper | importing |  OS X: 1.8.4 (1702)
 mSecure | msecure | importing | OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
 Norton Identity Safe | nortonis | importing | Windows: tested with 2014.7.11.42; OS X: untested (no trial version available - should work - please report your results)
 Passpack | passpack | importing | Web version 7.7.14 tested on OS X and Windows
+Password Agent | passwordagent | importing | Windows: 2.6.3
 Password Depot | passworddepot | importing | Windows: 8.1.1
 PasswordWallet | passwordwallet | importing | OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
 Safe in Cloud | safeincloud | importing | OS X: 1.6; Windows: 2.8
 SafeWallet | safewallet | importing | OS X 1.2; Windows: 2.4.1.2, 3.0.7
+SPB Wallet | spbwallet | importing | Windows: 2.1.2 (12118)
 SplashID | splashid | importing | OS X: 7.2.2; Windows: 7.2.4
 vCard, OS X Contacts | vcard | importing | OS X: 10.10.3 tested, vCard version 3.0
 
-## Requirements
-
-The script is a Perl script.  You will run it in a command shell under OS X using the
-**Terminal** application or under Windows using the Windows command shell **cmd.exe**.
-
-### OS X
-- 1Password for Mac, version 4.0 or higher
-
-### Windows
-
-- 1Password for Windows, version 4.1.0.520 or higher
-- [Strawberry Perl](http://strawberryperl.com/releases.html) portable version 5.16.3.1 (*not* 5.18 or later)
-
-### Additional Requirements
-
-The **Supported Converters** table above indicates the minimal software versions required or tested, and the platform used for export and conversion.  It is not possible (nor would it be worthwhile) to test all versions on all the platform variations.  Minor version differences generally should not matter (unless noted), so you can try the export and conversion.
-
-The converters require that both export and conversion are performed on the same OS platform (this .
-
-You are welcome to report any issues you encounter.
-
 ## Instructions
 
-The following instructions will guide you through the specific steps required to export your password manager's data, convert it, and import it into 1Password (or print it).  Instructions specific to either OS X or Windows will be noted below.  In addition, instructions specific to a given password manager will be noted in a separate section below.
+The following instructions will guide you through the specific steps required to export your password manager's data, convert it, and import it into 1Password (or in the case of a 1Password export conversion, to print the data).  Instructions specific to either OS X or Windows will be noted below.  In addition, password manager-specific instructions follow in a separate section later.
 
-** Note**: these instructions assume you have placed the **convert_to_1p4** folder complete with its contents onto your Desktop.
+** Note**:  The conversion utility was written using a scripting language, and the source code is readable by anyone.  This was done so that you and others can examine the source code to feel confident that your private data is not transmitted, or used in any unintended way.  Yyou are free and welcome to examine it and ask any questions should you have any concerns.
 
+** Tip**: Please don't let these instructions or the process intimidate you - the instructions are lengthy to be thorough, complete, and hand-holding.  In most cases the export, conversion, and import will take just a few minutes.
 
 ### 1. Verify Requirements
 
-Be sure you are running the required version of 1Password as mentioned in the requirements above. If
-you are using an earlier version, you will need to update 1Password to properly import your data.
+Be sure you are running at least the required version of 1Password as mentioned in the requirements table below. If you are using an earlier version, you will need to update 1Password to properly import your data.
 
-OS X includes Perl, so no additional software is required.
+Platform | Required versions and software
+|:-------|:-------|
+OS X | 1Password for Mac, version 4.0 or higher
+Windows | 1Password for Windows, version 4.1.0.520 or higher
 
-Windows users will need to download the portable version of Strawberry Perl.  Select the appropriate  [32-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-64bit-portable.zip) version of Strawberry Perl.  When you are
-done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 2 below.
+The **Supported Converters** table above indicates the minimal software versions required or tested, and the platform used for export and conversion.  It is not possible (nor would it be worthwhile) to test all versions on all the platform variations.  Minor version differences generally should not matter (unless noted), so you can try the export and conversion.
 
-### 2. Open the Command Line Shell
+The converter requires that both the export from your password manager and the conversion of that data are performed on the same OS platform.  Example, if you export your password manager's data on Windows, then run the converter on Windows.
 
-On OS X, open **Terminal** (under `Applications > Utilities`, or type **Terminal.app** in Spotlight and select
+The converter (witten in the Perl scripting language) runs in a command shell using either the OS X **Terminal** application or the Windows command shell **cmd.exe**.
+
+On OS X, an AppleScript is available which simplifies converting your exported data via drag-and-drop, eliminated several steps below.
+
+On Windows, a Perl interpreter is required, and you will need the free [Strawberry Perl](http://strawberryperl.com/releases.html), version 5.16.3.1 (*not* 5.18 or later).  Download the  **portable** version of Strawberry Perl, selecting the appropriate  [32-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-64bit-portable.zip) version.  When you are done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 3 below.
+
+### 2. Export Your Data
+
+See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 3 when the data is exported.  Note that some password managers support attachments and may or may not support exporting these attachments.  Regardless, **convert_to_1p4** does *not* support importing attachments into 1Password.
+
+### 3. Prepare for Conversion
+
+On OS X, you are encouraged to use the convenient drag-and-drop AppleScript named *AppleScript_Conversion_Helper* to simplify the conversion.  Skip to Step 4 to use it, or continue following the instructions to perform manual conversion.
+
+** Note**: The instructions that follow assume you have placed the **convert_to_1p4** folder complete with its contents onto your Desktop.
+
+To perform the conversion manually on OS X, open **Terminal** (under `Applications > Utilities`, or type **Terminal.app** in Spotlight and select
 it under Applications).  When a Terminal window opens, type (or better still, copy and paste) the command:
 
     cd Desktop/convert_to_1p4
@@ -77,29 +76,27 @@ and hit Enter.
 
 On Windows, perform the following steps:
 
-  * __2a.__ unzip the Strawberry Perl archive and place the unzipped archive as the folder: `C:\myperl` (right click the archive, Extract All, and enter `C:\myperl` as the Destination path). When the unzip has completed, you can delete the zip file.  
+  * __3a.__ unzip the Strawberry Perl archive and place the unzipped archive as the folder: `C:\myperl` (right click the archive, Extract All, and enter `C:\myperl` as the Destination path). When the unzip has completed, you can delete the zip file.  
    
-  * __2b.__ Enter the following command into Window's __Search programs and files__ box `C:\myperl\portableshell.bat` and hit Enter. This will open a command window with the required PATH variables set.
+  * __3b.__ Enter the following command into Window's __Search programs and files__ box `C:\myperl\portableshell.bat` and hit Enter. This will open a command window with the required PATH variables set.
 
-The following one-time commands will be entered into the just-opened command line window (copy and paste is the best method - to paste, right-click in the command line window).  You can skip to step 2f if you've already installed the modules successfully:
+The following one-time commands add required modules to the Strawberry Perl `C:\myperl` area, and will be entered into the just-opened command line window (copy and paste is the best method - to paste, right-click in the command line window).  You can skip to step 3f if you've already installed the modules successfully.  Be sure a command completes successfully (the last output from the command will end with `-- OK`).
 
-  * __2c.__ Enter the command `cpan Text::CSV` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
+  * __3c.__ Enter the command `cpan Text::CSV` and hit Enter. 
 
-  * __2d__ Enter the command `cpan Date::Calc` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
+  * __3d.__ Enter the command `cpan Date::Calc` and hit Enter.
 
-  * __2e.__ Enter the command `cpan XML::XPath` and hit Enter. Be sure the command completes successfully (the last output from the command will end with `-- OK`).  This one-time command adds a required module to the Strawberry Perl `C:\myperl` area.
+  * __3e.__ Enter the command `cpan XML::XPath` and hit Enter.
 
 The following command changes the working directory to the **convert_to_1p4** directory you placed on your Desktop:
 
-  * __2f.__ Enter the command `cd %USERPROFILE%\Desktop\convert_to_1p4` and hit Enter.
+  * __3f.__ Enter the command `cd %USERPROFILE%\Desktop\convert_to_1p4` and hit Enter.
 
-### 3. Export Your Data
+### 4. Perform the Conversion
 
-See your password manager's specific section under **Exporting from your Password Manager** below, and proceed to Step 4 when the data is exported.  Note that some password managers support attachments and may or may not support exporting these attachments.  Regardless, **convert_to_1p4** does *not* support attachment conversion.
+You are about to convert your data.  The utility does not modify your password manager's data, nor  does it transmit any data across a network.
 
-### 4. Execute the Perl Script
-
-You are about to convert your data.  The script only reads the file you exported from your password manager, and does not touch your password manager's original data file, nor does it transmit any data across a network.  Since the script is readable by anyone, you are free and welcome to examine it and ask any questions should you have any concerns.
+On OS X, simply drag the exported data file you created in Step 2 *onto* the *AppleScript_Conversion_Helper* file and follow the on-screen instructions.  If you get the OS X error message "*App can’t be opened because it is from an unidentified developer*", click `OK`, and then right-click and `Open` the *AppleScript_Conversion_Helper*.  The automatically-opened Terminal window will indicate the status of the conversion - you can `Quit` the Terminal application if the conversion was successful.  Proceed to Step 5 when the conversion is complete.  If you prefer not to use the *AppleScript_Conversion_Helper*, continue with the following steps.
 
 Find the name of your converter from the list of **Supported Converters** at the top of this guide.  You'll use that converter name in the command below, where you see *name_of_converter*.  For example, if you were converting data exported from Password Depot, *name_of_converter* would be *passworddepot*.
 
@@ -119,18 +116,14 @@ outputs:
     specify one of the converters above on the command line to see complete options
 
 Now, let's enter the command that performs the conversion.  In the Terminal window (OS X) or the command window (Windows), enter the appropriate command below for your OS version, replacing *name_of_converter* with the relevant converter name for your password manager, and replacing *name_of_export_file* with the name of your password manager's export file:
-
-- **OS X Yosemite (10.10)**
  
-      perl5.16 convert_to_1p4.pl name_of_converter -v ../name_of_export_file
-    
-- **OS X prior to Yosemite**
-
-      perl convert_to_1p4.pl name_of_converter -v ../name_of_export_file
+ - **OS X**
+ 
+     `perl5.16 convert_to_1p4.pl name_of_converter -v ../name_of_export_file`
 
 - **Windows**
 
-      perl convert_to_1p4.pl name_of_converter -v ..\name_of_export_file
+     `perl convert_to_1p4.pl name_of_converter -v ..\name_of_export_file`
 
 Hit `Enter` after you've entered the correct command.  See **Note** below.
 
@@ -159,7 +152,7 @@ If the conversion was successful, there will be a file named **1P_import.1pif** 
 
 ### 6. Securely Remove Exported Data
 
-As soon as you have completed the import into 1Password, or printing of your exported data, be sure to securely delete the exported file you created in Step 3, as well as the file created by the converter script in Step 4 (1P_import.1pif, 1P_print.html), since these contain your unencrypted data.
+As soon as you have completed the import into 1Password, or printing of your exported data, be sure to securely delete the exported file(s) you created in Step 2, as well as the file created by the converter script in Step 4 (e.g. 1P_import.1pif, 1P_print.html), since these contain your unencrypted data.
 
 ## Miscellaneous Notes
 
@@ -364,14 +357,62 @@ Launch KeePassX, and export its database to a text file using the `File > Export
 ---
 
 ### ● Keychain
-Copy the command below and paste it into the Terminal app:
+The **Keychain Access** app allows you to view your OS X keychains.  It will show both local OS X keychains and the iCloud Keychain.  However, **Keychain Access** does does not support exporting the contents of keychains; instead, the OS X command line `security` tool provides this capability.  To further complicate the issue, the `security` tool only supports dumping entries from *local* keychains; iCloud keychains require copying entries to a new local keychain.
+
+When run, the `security` tool will present many confirmation dialogs, one confirmation dialog per item in your Keychain.  So you will have to press `Allow` many times, or you can use an AppleScript to help automate this.  To see how many entries you have, lanuch `Applications > Utilties > Keychain Access`, and select the **login** item under **Keychains**, and **All Items** under **Categories**.  The list of items that will be exported (and hence require confirmation) is in the area at the right.
+
+To create an AppleScript to perform the Allow action for you, launch `Applications > Utilities > Script Editor`.  Copy the AppleScript code below, and paste it into the upper area of the open script edit entry area.
+
+```
+tell application "System Events"
+	repeat while exists (processes where name is "SecurityAgent")
+		tell process "SecurityAgent"
+			click button "Allow" of window 1
+		end tell
+		delay 0.2
+	end repeat
+end tell
+```
+
+Now, open `System Preferences > Security & Privacy`, and select the **Accessibility** section.  Unlock the System Preferences dialog (if it is locked) by clicking the lock icon in the lower left of the dialog and entering your system password.  Once unlocked, click the add (plus) button below the section named *Allow the apps below to control your computer*, and add `Applications > Utilities > Script Editor` to the list of applications that may control your computer (you can disable this later).
+
+To export the OS X Keychain, copy the command below and paste it into the Terminal app:
+
 ```
 security dump-keychain -d login.keychain > ~/Desktop/pm_export.txt
 ```
 
-and press Enter.
+and press `Enter`.  When OS X prompts you to allow the action - repeatedly press `Allow`, or if you've created the AppleScript mentioned above and have `Script Editor` open with the script entered, press the run (right-facing triangle) button.  The AppleScript will run until there are no more entries, and your keychain data should now be on your Desktop in the file named **pm_export.txt**.
 
-OS X will prompt you to allow the action - press `Allow`.  You will have to do this repeatedly until all the entries have been exported.  If you have many entries, a [Click Allow AppleScript](https://gist.github.com/rwest/1583781#file-click_allow-scpt) will press `Allow` automatically.  To see how many entries you have, open the `Keychain Access` application under `Applications > Utilties`.  Select the **login** item under **Keychains**, and **All Items** under **Categories**.
+To export your iCloud Keychain, you need to create a new local keychain and copy the contents from the iCloud Keychain.  Launch the `Keychain Access` app, and select the `File > New Keychain` menu item.  Name the keychain **local-icloud**, and click the `Create` button.  Enter a short, easy to type password and click `OK`.  Under the **Keychains** section, select the **iCloud** keychain.  Now select all of the items in that keychain on the right, and copy them with ⌘-C or `Edit > Copy`.  Now select the **local-icloud** keychain, and paste the entries with ⌘-V or `Edit > Paste`.  You will be presented with many authorization dialogs.  Enter your passwords as requested, or open a new script document in the **Script Editor**, and copy/paste the following script as above:
+
+```
+tell application "System Events"
+	repeat while exists (processes where name is "SecurityAgent")
+		tell process "SecurityAgent"
+			set value of text field 1 of window 1 to "MYPASSWORD"
+			click button "OK" of window 1
+		end tell
+		delay 0.2
+	end repeat
+end tell
+```
+
+replacing the word **MYPASSWORD** with the password you just set for the keychain.  Run the AppleScript to automate performing the password entry.
+
+.  To export this local copy of your iCloud Keychain, copy the command below and paste it into the Terminal app:
+
+```
+security dump-keychain -d local-icloud > ~/Desktop/pm_export-icloud.txt
+```
+
+and press `Enter`.  As above, repeatedly press `Allow`, or use the AppleScript method to automate the tedious process.  Once the export is complete, you may delete the **local-icloud** keychain in `Keychain Access` if you wish (delete both References and Files).
+
+You may now quit **Keychain Access**, **Script Editor**, and **System Preferences** if you wish.
+
+You will now have one or two exported files - convert and import each of these into 1Password independently, one at a time.
+
+**Note**: Copying items from an **iCloud Keychain** to a local keychain sets the modified and created dates of the pasted entries to the time of the paste.  The original dates are not retained in the copies.
 
 ---
 
@@ -381,7 +422,17 @@ Launch the browser you normally use with LastPass. From the LastPass browser ext
 
 **Note**: In some cases, the LastPass exported data will open in a separate browser window, showing the contents of your LastPass data.  If this happens, select all of the data on the page (Cmd-A) and Copy it (Cmd-C). Open TextEdit, and go to the menu `TextEdit > Preferences`. In the New Document tab, under Format, select `Plain Text` and close that dialog. Open a new document (Cmd-N). Paste your data now (Cmd-V), and save it to your Desktop with the file name `pm_export.txt` and selecting `Unicode (UTF-8)` as the Plain Text Encoding.
 
-**Note**: LastPass exports Form Fill Profiles separately.  When you have completed converting and importing the data you exported above, repeat the process from Step 3 onward, this time exporting your Form Fill Profiles using the `Tools > Advanced Tools > Export To > Form Fill Profiles` menu. 
+**Note**: The LastPass extension for Chrome incorrectly opens the export as an HTML document.  If you are using Chrome as your browser, do not use the extension to start the export.  Instead, either use the LastPass extension in another browser, or use the `Tools > Advanced > Export` item in the left sidebar when your vault is open in the browser (you will have to use the copy / paste method mentioned in the note above).
+
+**Note**: LastPass exports Form Fill Profiles separately, using the `Tools > Advanced Tools > Export To > Form Fill Profiles` menu.  If you want to convert and import your Form Fill Profiles, export these to a separate export file, for example, **pm_export_ff.txt**.  When you have completed converting and importing your primary data, repeat from Step 4 onward, this time converting the file **pm_export_ff.txt** and and importing the resulting .1pif file.
+
+---
+
+### ● LicenseKeeper
+
+Launch LicenseKeeper, and export its database as an XML export file using the `File > Export > Library to XML...` menu item.  When the folder save dialog appears, select **Desktop** from the sidebar, and then click the `Choose Export Folder` button.  This will store the XML file inside a folder named **LicenseKeeper Export**.  The file named **LicenseKeeper.xml** inside that folder is your exported XML data.  After the export has completed, you may quit LicenseKeeper.
+
+The converter will rename the exported, name-encoded attachments.  They will be prefixed with the record's Title, and can be found in the **Attachments** folder within the **LicenseKeeper Export** folder.
 
 ---
 
@@ -414,6 +465,12 @@ On OS X, open TextEdit, and go to the menu `TextEdit > Preferences`. In the New 
 
 ---
 
+### ● Password Agent
+
+Launch Password Agent, and export its database as an XML file using the `File > Print & Export` menu item.  When the *Print & Export Wizard* dialog opens, click the **all** selector above the *Groups* listing, and click the **all** selector above the *Fields* listing.  Under the *Output format*, select the **XML - export database** option.  You can ignore the *Sort by* pulldown.  Click `Next` to continue.  When the the *Save As* dialog appears, click the `Browse` button, navigate to your Destkop, and save the file to your Desktop with the name **pm_export.xml**.  When the export has completed, close the wizard.  You may now quit Password Agent.
+
+---
+
 ### ● Password Depot
 
 Launch Password Depot.  On the left side, select your password file's name (or the highest level folder you want to export).  Select the `Tools` ribbon menu item, click the `Export` button, and select the `Export Wizard` item.  Enter your Password Depot password when the dialog appears, and press `OK`.  The *Export format* should be left as *Extensible Markup Language format (**.xml)*.  Click the `Browse` button, navigate to your **Desktop** folder and in the *File name* area, enter the name **pm_export.xml**.  Be sure the *Original folder* pulldown has the top-level folder you want exported (the top level is the entire contents of the password file).  Click `Next` to complete the export and then click `Finish` to close out the wizard.  You should now have your data exported as an XML text file by the name above on your Desktop.  You may now quit Password Depot.
@@ -437,6 +494,13 @@ Launch Safe in Cloud, and export its database to an XML file using the `File > E
 Launch SafeWallet, and export its database to an XML file.  On OS X, use the `File > Export...` menu.  Select the XML tab, and click `Export`.  On Windows, use the `File > Export Wallet` menu, select the `Export to XML file` button, and click Next.  Click the `Browse button`.
 
 Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  On Windows, click the `Finish` button and press `OK` when the successful export dialog appears.  You may now quit SafeWallet.
+
+---
+
+### ● SPB Wallet
+There is no need to export any data from SPB Wallet.  The converter will read and decrypt the data directly from the SPB Wallet .swl file.  It might be easiest to move your .swl wallet file to your Desktop.  When you enter your command line, use your .swl wallet file's name as *name_of_export_file*.
+
+If would prefer not to move the .swl file, you'll have to specify a path to your wallet file in place of the relative path ..\*name_of_your_spbwallet_file*.
 
 ---
 

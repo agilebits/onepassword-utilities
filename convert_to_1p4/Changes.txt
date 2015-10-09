@@ -1,3 +1,17 @@
+Version 1.06:
+  - New: LicenseKeeper converter now available.
+  - New: Password Agent converter now available.
+  - New: Spb Wallet converter now available.
+  - New: AppleScript helper applet makes conversion easier for OS X users.  Just drag your password manager's
+    exported data file onto the helper applet "AppleScript_Conversion_Helper", and follow the instructions.
+  - Change: Updated the README to accommodate the new OS X AppleScript_Conversion_Helper.
+  - Fix: Update the README to provide a workaround for problematic exports with the LastPass extension in Chrome.
+  - Fix: PasswordWallet conveter now handles the reserved auto-type characters that may be present in
+    username or password fields.  The tab and reverse tab characters will split the field when within
+    a value, and data that follows will be placed in Notes as username- or password-specific
+    field/value pairs, as in "username_part_2: next", "username_part_3: field", etc.
+  - Change: Changed the stylesheet used to render the README.pdf.
+
 Version 1.05:
   - New: OS X Contacts converter (vcard), converts Contacts exports into identity entries.
   - New: 1PIF to HTML converter (onepif2html) for record printouts.

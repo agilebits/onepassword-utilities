@@ -1,7 +1,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.04;
+package Utils::PIF 1.05;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized get_items_from_1pif typename_to_typekey);
@@ -673,6 +673,8 @@ sub create_pif_file {
 	output_folder_records($outfh, $gFolders, undef);
     }
     close $outfh;
+
+    verbose "You may now import the file $outfile into 1Password"	if $ntotal
 }
 
 sub add_to_folder_tree {
