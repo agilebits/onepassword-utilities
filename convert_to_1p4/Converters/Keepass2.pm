@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepass2 1.02;
+package Converters::Keepass2 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -19,10 +19,16 @@ binmode STDERR, ":utf8";
 
 use Utils::PIF;
 use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
-use XML::Parser;
+use File::Basename;
+use File::Spec;
+use File::Path qw(make_path);
+use XML::XPath;
+use XML::XPath::XMLParser;
 use HTML::Entities;
 use Time::Local qw(timegm);
 use Time::Piece;
+use Compress::Raw::Zlib;
+use MIME::Base64;
 
 my %card_field_specs = (
     login =>			{ textname => undef, fields => [
@@ -37,13 +43,8 @@ my %card_field_specs = (
 $DB::single = 1;					# triggers breakpoint when debugging
 
 my %fields = ();
-my @paths;		# xml paths
-my @group;		# current group hierarchy
-my $currentkey;		# the current key name being parsed
-my $collecting = 1;	# is the parser currently collecting data?
-my $xmldbg = 0;
-
 my @gCards;
+my $attachdir;
 
 sub do_init {
     return {
@@ -58,17 +59,54 @@ sub do_init {
 sub do_import {
     my ($file, $imptypes) = @_;
 
-    my $parser = new XML::Parser(ErrorContext => 2);
+    $attachdir = File::Spec->catfile(dirname($main::opts{'outfile'}), '1P4_Attachments');
+    my $xp = XML::XPath->new(filename => $file);
 
-    $parser->setHandlers(
-	Char =>     \&char_handler,
-	Start =>    \&start_handler,
-	End =>      \&end_handler,
-	Final =>    \&final_handler,
-	Default =>  \&default_handler
-    );
+    my %attachments;
+    foreach my $binnode ($xp->findnodes('/KeePassFile/Meta/Binaries/Binary')) {
+	my $id = $binnode->getAttribute('ID');
+	$attachments{$id}{'iscompressed'} = ($binnode->getAttribute('Compressed') eq 'True');
+	$attachments{$id}{'data'} = $binnode->string_value;
+    }
 
-    $parser->parsefile($file);
+    my $groupnodes = $xp->find('/KeePassFile/Root//Group');
+    foreach my $groupnode ($groupnodes->get_nodelist) {
+	my @group = get_group_path($xp, $groupnode);
+	my $entrynodes = $xp->find('./Entry', $groupnode);
+	    foreach my $entrynode ($entrynodes->get_nodelist) {
+		debug "ENTRY:";
+		%fields = ();
+		debug "Node: ", $entrynode->getName;
+		foreach my $element ($entrynode->getChildNodes) {
+		    next unless scalar $element->getName;
+		    debug "Element: ", $element->getName;
+		    if ($element->getName eq 'String') {
+			my ($key, $value);
+			$key = ($xp->findnodes('./Key', $element))[0]->string_value;
+			$value = ($xp->findnodes('./Value', $element))[0]->string_value;
+			$fields{$key} = $value;
+			debug "\tkey: $key: '$value'";
+
+		    }
+		    if ($element->getName eq 'Binary') {
+			my %a = (
+			    filename => ($xp->findnodes('./Key',   $element))[0]->string_value,
+			    id       => ($xp->findnodes('./Value', $element))[0]->getAttribute('Ref'),
+			);
+			debug "\tAttachment $a{'id'}: '$a{'filename'}";
+			push @{$fields{"__ATTACHMENTS__"}}, \%a;
+		    }
+		    elsif ($main::opts{'modified'} and $element->getName eq 'Times') {
+			my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
+			debug " **** Field: LastModificationTime: ==> '$mtime'";
+			$fields{'LastModificationTime'} = date2epoch($mtime);
+		    }
+		}
+		$fields{'Tags'} = join '::', @group;
+		$fields{'Folder'} = [ @group ];
+		push @gCards, { %fields };
+	    }
+    }
 
     @gCards or
 	bail "No entries detected in the export file\n";
@@ -85,6 +123,13 @@ sub do_import {
 
 	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
+
+	# handle creation of attachment files from encoded / compressed string
+	my $dir;
+	for (@{$c->{'__ATTACHMENTS__'}}) {
+	    $dir = create_attachment($attachments{$_->{'id'}}, $dir, $_->{'filename'}, $card_title);
+	}
+	delete $c->{'__ATTACHMENTS__'};
 
 	# From the card input, place it in the converter-normal format.
 	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
@@ -204,108 +249,19 @@ sub by_test_order {
     $a cmp $b;
 }
 
-# handlers below
+sub get_group_path {
+    my ($xp, $node) = @_;
 
-
-sub start_handler {
-    my ($p, $el) = @_;
-
-    push @paths, my $path = join('::', $p->context, $el);
-    $xmldbg && debug 'START path: ', $path;
-
-    if (defined $p->current_element) {
-
-	# Ignore the data in the card's History group
-	if ($path =~ /::Group::Entry::History$/) {
-	    $xmldbg && debug "START HISTORY - collecting disabled";
-	    $collecting = 0;
-	    return;
-	}
-
-	return if not $collecting;
-	if ($path =~ /::Group$/) {
-	    $xmldbg && debug "=== START GROUP";
-	    push @group, '';
-	}
-	elsif ($path =~ /::Group::Entry$/) {
-	    $xmldbg && debug "START ENTRY";
-	    %fields = ();
-	}
-	elsif ($path =~ /::Group::Entry::String::Key$/) {
-	    $xmldbg && debug "START KEY";
-	}
+    my @names;
+    while ($node->getName ne 'Root') {
+	unshift @names, ($xp->findnodes('./Name', $node))[0]->string_value;
+	$node = $node->getParentNode;
     }
+
+    shift @names;
+    debug "\tGROUP: ", join '::', @names;
+    return @names;
 }
-
-sub char_handler {
-    my ($p, $data) = @_;
-
-    my $path = $paths[-1];
-
-    #if ($data eq '&' or $data eq '<' or $data eq '>') { $data = encode_entities($data); }	# only required when output is XML
-    # the expat parser returns entities as single characters
-    #else					      { $data = decode_entities($data); }
-
-    return if not $collecting;
-
-    if ($path =~ /::Group::Name$/) {
-	$group[-1] .= $data;
-	debug "\tGROUP name: ==> '$group[-1]'";
-    }
-    elsif ($path =~ /::Group::Entry::Times::LastModificationTime$/) {
-	if ($main::opts{'modified'}) {
-	    debug " **** Field: LastModificationTime: ==> '$data'";
-	    $fields{'LastModificationTime'} = date2epoch($data);
-	}
-    }
-    elsif ($path =~ /::Group::Entry::String::Key$/) {
-	debug " **** current key: '$data'";
-	$currentkey = $data;
-    }
-    elsif ($path =~ /::Group::Entry::String::Value$/) {
-	debug " **** Field: $currentkey ==> '$data'";
-	$fields{$currentkey} .= $data;
-    }
-    else {
-	$xmldbg && debug "\t\t...ignoring char data: ", $data =~ /^\s+/ms ? 'WHITESPACE' : $data;
-    }
-}
-
-sub end_handler {
-    my ($p, $el) = @_;
-
-    my $path = pop @paths;
-    $xmldbg && debug '__END path: ', $path;
-
-    if ($path =~ /::Group::Entry::History$/) {
-	$xmldbg && debug "END HISTORY - collecting enabled";
-	$collecting = 1;
-	return;
-    }
-
-    return if not $collecting;
-
-    if ($path =~ /::Group$/) {
-	my $grp = pop @group;
-	$xmldbg && debug "========= END GROUP: ", $grp;
-    }
-    elsif ($path =~ /::Group::Entry$/) {
-	$xmldbg && debug "END ENTRY: ... output values\n";
-	debug "END ENTRY: ... output values\n";
-	$fields{'Tags'} = join '::', @group[1..$#group];
-	$fields{'Folder'} = [ @group[1..$#group] ];
-	push @gCards, { %fields };
-	#print Dumper \%fields;
-
-	return;
-    }
-}
-
-sub final_handler {
-    #print Dumper(\%fields);
-}
-
-sub default_handler { }
 
 # Date converters
 # LastModificationTime field:	 yyyy-mm-ddThh:mm:ssZ
@@ -323,6 +279,60 @@ sub parse_date_string {
 sub date2epoch {
     my $t = parse_date_string @_;
     return defined $t->year ? 0 + timegm($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
+}
+
+sub create_attachment {
+    my ($a, $dir, $filename, $title) = @_;
+
+    my $data;
+    if ($a->{'iscompressed'}) {
+	my $inf = new Compress::Raw::Zlib::Inflate('-WindowBits' => WANT_GZIP_OR_ZLIB) ;
+	my $status = $inf->inflate(decode_base64($a->{'data'}), $data);
+	if ($status ne 'stream end') {
+	    warn "Failed to inflate compressed data: $filename\n$!";
+	    return;
+	}
+    }
+    else {
+	$data = decode_base64 $a->{'data'};
+    }
+
+    if (!$dir) {
+	$dir = File::Spec->catfile($attachdir, fs_safe($title));
+	if (-e $dir) {
+	    my $i;
+	    for ($i = 1; $i <= 1000; $i++) {
+		my $uniqdir = sprintf "%s (%d)", $dir, $i;
+		next if -e $uniqdir;
+		$dir = $uniqdir;
+		last;
+	    }
+	    if ($i > 1000) {
+		warn "Failed to create unique attachment directory: $dir\n$!";
+		return;
+	    }
+	}
+    }
+    if (! -e $dir and ! make_path($dir)) {
+	warn "Failed to create attachment directory: $dir\n$!";
+	return;
+    }
+    $filename = File::Spec->catfile($dir, fs_safe($filename));
+    if (! open FD, ">", $filename) {
+	warn "Failed to create new file for attachment: $filename\n$!";
+	return;;
+    }
+    print FD $data;
+    close FD;
+    verbose "Attachment created: $filename";
+
+    return $dir;
+}
+
+sub fs_safe {
+    local $_ = shift;
+    s/[:\/\\*?"<>|]//g;         # remove FS-unsafe chars
+    return $_;
 }
 
 1;

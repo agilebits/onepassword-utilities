@@ -1,7 +1,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.05;
+package Utils::PIF 1.06;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized get_items_from_1pif typename_to_typekey);
@@ -621,7 +621,7 @@ sub create_pif_record {
 	$rec->{'secureContents'}{'notesPlain'} .= join ': ', $_->{'inkey'}, $_->{$valuekey};
     }
 
-    ($rec->{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM())) =~ s/-//g;
+    $rec->{'uuid'} = new_uuid();
 
     # force updatedAt and createdAt to be ints, not strings
     if (exists $card->{'modified'} and defined $card->{'modified'}) {
@@ -687,7 +687,7 @@ sub add_to_folder_tree {
     else {
 	# create new folder_tree node
 	$$folder_tree->{$folder_name}{'children'} = {};
-	($$folder_tree->{$folder_name}{'uuid'} = create_uuid_as_string(UUID::Tiny->UUID_RANDOM(), 'cappella.us')) =~ s/-//g;
+	$$folder_tree->{$folder_name}{'uuid'} = new_uuid();
 	if (@_) {
 	    add_to_folder_tree(\$$folder_tree->{$folder_name}{'children'}, @_);
 	}
@@ -915,6 +915,12 @@ sub country_to_code {
     }
 
     return $_[0];
+}
+
+sub new_uuid {
+    my $uuid = create_uuid_as_string(UUID::Tiny->UUID_RANDOM());
+    $uuid =~ s/-//g;
+    return uc $uuid
 }
 
 1;
