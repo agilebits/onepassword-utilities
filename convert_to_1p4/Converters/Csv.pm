@@ -1,8 +1,8 @@
-# EssentialPIM CSV export converter
+# Generic CSV converter
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Essentialpim 1.01;
+package Converters::Csv 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -22,14 +22,14 @@ use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
 use Text::CSV;
 
 my %card_field_specs = (
-    password =>			{ textname => '', type_out => 'login', fields => [
-	[ 'title',		0, qr/^Title$/, ],
-	[ 'username',		1, qr/^User Name$/, ],
-	[ 'password',		1, qr/^Password$/, ],
-	[ 'url',		1, qr/^URL$/, ],
-	[ 'notes',		0, qr/^Notes$/, ],
+    login =>			{ textname => '', fields => [
+	[ 'title',		0, qr/^title$/i, ],
+	[ 'url',		1, qr/^website|url$/i, ],
+	[ 'username',		1, qr/^username$/i, ],
+	[ 'password',		1, qr/^password$/i, ],
+	[ 'notes',		0, qr/^notes$/i, ],
     ]},
-    note =>			{ textname => 'Note', fields => [
+    note =>			{ textname => '', fields => [
     ]},
 );
 
@@ -48,30 +48,42 @@ sub do_import {
 
     my $csv = Text::CSV->new ({
 	    binary => 1,
-	    allow_loose_quotes => 1,
+	    allow_loose_quotes => 0,
 	    sep_char => ',',
-	    eol => ",\n",
+	    eol => "\x{0d}\x{0a}",
     });
 
     open my $io, "<:encoding(utf8)", $file
 	or bail "Unable to open CSV file: $file\n$!";
 
+=cut
     # remove BOM
     my $bom;
     (my $nb = read($io, $bom, 1) == 1 and $bom eq "\x{FEFF}") or
 	bail "Failed to read BOM from CSV file: $file\n$!";
+=cut
 
     my $column_names = $csv->getline($io) or
 	bail "Failed to parse CSV column names: $!";
+    $_ = lc $_  foreach @$column_names;
 
     # get the card type, and create a hash of the key field names that maps the column names to column positions
-    my ($itype, $card_names_to_pos) = find_card_type($column_names);
-    %$card_names_to_pos or
+    my ($itype, $col_names_to_pos) = find_card_type($column_names);
+    %$col_names_to_pos or
 	bail "CSV column names do not match expected names";
 
     # grab and remove the special field column names
-    for (sort { $b <=> $a } values $card_names_to_pos) {
+    for (sort { $b <=> $a } values $col_names_to_pos) {
 	splice @$column_names, $_, 1;
+    }
+
+    my $i = 1;
+    for (@$column_names) {
+	next if /^title|url|username|password|notes$/;
+	my $col_name = sprintf "_%s_%d", $_, $i;
+	add_new_field('login',        $col_name,	  'other.Other Information',$Utils::PIF::k_string, $_);
+	push @{$card_field_specs{$itype}{'fields'}}, [ $col_name, 0, qr/^\Q$_\E$/i ];
+	$i++;
     }
 
     my %Cards;
@@ -84,15 +96,15 @@ sub do_import {
 
 	my (@fieldlist, %hr);
 	# save the special fields to pass to normalize_card_data below, and then remove them from the row.
-	for (keys %$card_names_to_pos) {
-	    $hr{$_} = $row->[$card_names_to_pos->{$_}];
+	for (keys %$col_names_to_pos) {
+	    $hr{$_} = $row->[$col_names_to_pos->{$_}];
 	}
 	# remove the special field values
-	for (sort { $b <=> $a } values $card_names_to_pos) {
+	for (sort { $b <=> $a } values $col_names_to_pos) {
 	    splice @$row, $_, 1;
 	}
 
-	# everything that remains in the row is the the field data
+	# everything that remains in the row is the field data
 	for (my $i = 0; $i <= $#$column_names; $i++) {
 	    debug "\tcust field: $column_names->[$i] => $row->[$i]";
 	    push @fieldlist, [ $column_names->[$i] => $row->[$i] ];		# retain field order
@@ -197,8 +209,8 @@ sub find_card_type {
 	for my $def (@{$card_field_specs{$type}{'fields'}}) {
 	    for (my $i = 0; $i <= $#$row; $i++) {
 		if (defined $def->[2] and $row->[$i] =~ /$def->[2]/ms) {
-		    $otype = $type	 		if $def->[1];		# type hint
-		    $col_names_to_pos{$def->[0]} = $i	if $def->[0] =~ /^title|notes$/;
+		    $otype = $type	 			if $def->[1];		# type hint
+		    $col_names_to_pos{$def->[0]} = $i		if $def->[0] =~ /^title|notes$/;
 		}
 	    }
 	}

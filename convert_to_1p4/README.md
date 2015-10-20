@@ -3,10 +3,12 @@
 The **convert_to_1p4** utility converts exported data from various password management programs into a format that can be imported by 1Password, or in the case of 1Password data, suitable for printing.  The table below lists the currently supported password management programs, along with the converter's name, and the purpose of the converter.
 
 ## Supported Converters
+
 Password Manager | Converter Name | Purpose | Minimal Version or Version Tested
 :-------|:-------|:-------|:-------
 1Password | onepif2html | printing | 1Password 4
 Clipperz | clipperz | importing | the clipperz web program does not have typical version numbers; tested against clipperz as of Sept 2014
+CSV (generic) | csv | importing | OS X
 Data Guardian | dataguardian | importing | OS X: 3.2; Windows: 3.2
 DataVault | datavault | importing | OS X: 5.2.39; Windows: 5.1.32
 EssentialPIM | essentialpim | importing | Windows: 6.04
@@ -102,18 +104,21 @@ Find the name of your converter from the list of **Supported Converters** at the
 
 **Note**: The list of supported converters can also be output by using the `--help` option, for example, the command:
 
-    perl convert_to_1p4.pl --help.
+    perl convert_to_1p4.pl --help
     
 outputs:
 
-    Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
+```
+Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
-    converters:
-        clipperz dataguardian datavault essentialpim ewallet handysafe keepass2 keepassx keychain
-        lastpass msecure onepif2html passpack passworddepot passwordwallet safeincloud safewallet
-        splashid vcard
+converters:
+    clipperz dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
+    keepassx keychain lastpass licensekeeper msecure nortonis onepif2html passpack
+    passwordagent passworddepot passwordwallet safeincloud safewallet spbwallet splashid
+    vcard
 
-    specify one of the converters above on the command line to see complete options
+specify one of the converters above on the command line to see complete options
+```
 
 Now, let's enter the command that performs the conversion.  In the Terminal window (OS X) or the command window (Windows), enter the appropriate command below for your OS version, replacing *name_of_converter* with the relevant converter name for your password manager, and replacing *name_of_export_file* with the name of your password manager's export file:
  
@@ -178,10 +183,11 @@ $ perl convert_to_1p4.pl ewallet --help
 Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
 converters:
-    clipperz dataguardian datavault essentialpim ewallet handysafe keepass2 keepassx keychain
-    lastpass msecure onepif2html passpack passworddepot passwordwallet safeincloud safewallet
-    splashid vcard
-    
+    clipperz dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
+    keepassx keychain lastpass licensekeeper msecure nortonis onepif2html passpack
+    passwordagent passworddepot passwordwallet safeincloud safewallet spbwallet splashid
+    vcard
+
 options:
     -d or --debug              # enable debug output
     -e or --exptypes <list>    # comma separated list of one or more export types from list below
@@ -200,6 +206,7 @@ supported import types:
 supported export types:
     bankacct creditcard driverslicense email login membership note passport server
     socialsecurity software
+
 ```
 
 ---
@@ -285,6 +292,11 @@ The Clipperz converter currently supports only English field names.
 
 ---
 
+### ● CSV
+This is a generic CSV converter which currently handles Logins.  Construct the CSV in a spreadsheet program - it must have the following columns: Title, Username, Password, URL, Notes.  Ensure the first row is a column header with those names (case does not matter).  Additional columns may follow, and their titles will be used to create custom fields in the entry, and the corresponding values will be stored in these fields.
+
+---
+
 ### ● Data Guardian
 
 Launch Data Guardian and export its database to a CSV text file using the `Record > Export...` menu item.  From the left side bar, select **Text**.  Under the list of fields that can be exported, click the `Check All` button.  In the **Field Delimiter** pulldown, select the *Comma (CSV)* choice.  Under **Options**, select the *Include header row* checkbox.  Click the `Export` button, and in the *Export Database* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  When the dialog appears asking what suffix to use, select the `use .txt` button.  You may now quit Data Guardian.
@@ -348,6 +360,8 @@ Click `OK` when export warning dialog appears (e.g. *The information in exported
 
 ### ● KeePass 2
 Launch KeePass 2, and export its database to an XML export file using the ```File > Export ...``` menu item, and select the KeePass XML (2.x) format.  In the `File: Export to:` section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your **Desktop** folder, and in the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
+
+The converter will decode and convert an entry's attachments. They are placed in a folder named **1P4_Attachments** in the same location that the **1P4_import.1pif** file will be created.  An entry's attachments are placed in a sub-directory named with the entry's Title.
 
 ---
 

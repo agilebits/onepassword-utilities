@@ -1,3 +1,17 @@
+Version 1.07:
+  - New: The keepass2 converter will decode and convert an entry's attachments. They are placed in a folder
+    named 1P4_Attachments in the same location that the 1P4_import.1pif file will be created.  An entry's
+    attachments are placed in a sub-directory named with the entry's Title.
+  - Fix: The keepass2 converter sometimes failed to parse an entry's modification time (and theoretically could
+    have failed to parse other items correctly).  To resolve this, and to robustly support attachments, the parser
+    was rewritten, using different XML parsing modules.
+  - Fix: Essentialpim converter might have missed detection of the notes or title of a customized entry due
+    to an off-by-one error iterating through a loop.
+  - New: CSV converter.  This converter is just a basic CSV converter that currently only supports Logins and
+    Notes.  It will be customized or updated as necessary to accommodate specific user needs.
+  - Change: make UUID values all uppercase; 1Password was expecting these when using OPVault (used for creating
+    band files).
+
 Version 1.06:
   - New: LicenseKeeper converter now available.
   - New: Password Agent converter now available.
