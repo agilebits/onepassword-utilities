@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Msecure 1.00;
+package Converters::Msecure 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Text::CSV;
 
 #
@@ -71,14 +73,14 @@ my %card_field_specs = (
     frequentflyer =>		{ textname => 'Frequent Flyer', type_out => 'rewards', fields => [
 	[ 'membership_no',	0, 'Number', ],
 	[ 'website',		0, 'URL', ],
-	[ 'member_name',	0, 'URL', ],
+	[ 'member_name',	0, 'Username', ],
 	[ 'pin',		0, 'Password', ],
 	[ 'mileage',		0, 'Mileage', ],
     ]},
     identity =>			{ textname => 'Identity',  fields => [
 	[ 'firstname',		0, 'First Name', ],
 	[ 'lastname',		0, 'Last Name', ],
-	[ 'nickname',		0, 'Nick Name', ],
+	[ 'nickname',		0, 'Nick Name',		{ custfield => [ $Utils::PIF::sn_identity, $Utils::PIF::k_string, 'nickname' ] }  ],
 	[ 'company',		0, 'Company', ],
 	[ 'jobtitle',		0, 'Title', ],
 	[ 'address',		0, 'Address', ],	# code below assumes position index (5) and order: _street _street2 city state country zip
@@ -91,14 +93,14 @@ my %card_field_specs = (
 	[ 'busphone',		0, 'Office Phone', ],
 	[ 'cellphone',		0, 'Mobile Phone', ],
 	[ 'email',		0, 'Email', ],
-	[ 'email2',		0, 'Email2', ],
+	[ 'email2',		0, 'Email2',		{ custfield => [ $Utils::PIF::sn_internet, $Utils::PIF::k_string, 'email2' ] } ],
 	[ 'skype',		0, 'Skype', ],
 	[ 'website',		0, 'Website', ],
     ]},
     insurance =>		{ textname => 'Insurance', type_out => 'membership', fields => [
-	[ 'polid',		0, 'Policy No.', ],
-	[ 'grpid',		0, 'Group No.', ],
-	[ 'insured',		0, 'Name', ],
+	[ 'polid',		0, 'Policy No.',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'policy ID' ] } ],
+	[ 'grpid',		0, 'Group No.',		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group ID' ] } ],
+	[ 'insured',		0, 'Name',		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'insured' ] } ],
 	[ 'date',		0, 'Date', ],
 	[ 'phone',		0, 'Phone No.', ],
     ]},
@@ -181,6 +183,7 @@ sub do_import {
 	$ll_typeMap{ll($card_field_specs{$_}{'textname'})} = $_;
     }
 
+    # The mSecure/Windows CSV output is horribly broken
     my $csv = Text::CSV->new ({
 	    binary => 1,
 	    allow_loose_quotes => 1,
@@ -188,7 +191,7 @@ sub do_import {
 	    $^O eq 'MSWin32' ? ( eol => "\x{a}", escape_char => undef ) : (  eol => ",\x{a}" )
     });
 
-    # The Windows version of mSecure incorrectly exports data in CSV as latin1 instead of UTF8.  Sigh.
+    # The Windows version of mSecure exports CSV data as latin1 instead of UTF8.  Sigh.
     open my $io, $^O eq 'MSWin32' ? "<:encoding(latin1)" : "<:encoding(utf8)", $file
 	or bail "Unable to open CSV file: $file\n$!";
 
@@ -200,7 +203,6 @@ sub do_import {
 
     my %Cards;
     my ($n, $rownum) = (1, 1);
-    my ($npre_explode, $npost_explode);
 
     while (my $row = $csv->getline ($io)) {
 	if ($row->[0] eq '' and @$row == 1) {
@@ -208,7 +210,7 @@ sub do_import {
 	    next;
 	}
 	debug 'ROW: ', $rownum++;
-	my ($itype, $otype, @fieldlist);
+	my ($itype, $otype, %cmeta, @fieldlist);
 
 	# on Windows, need to convert \" into "
 	if ($^O eq 'MSWin32') {
@@ -223,14 +225,15 @@ sub do_import {
 	# defines the meaning of each column per cardtype.  Some cardtypes will be remapped to 1P4
 	# types.
 	#
-	my $card_tags	 = shift @$row;
+	$cmeta{'tags'}	 = shift @$row;
 	my $msecure_type = shift @$row;
-	my $card_title	 = shift @$row;
+	$cmeta{'title'}	 = shift @$row;
 	my $notes	 = shift @$row;
-	my @card_notes = ([], [], []);
-	push @{$card_notes[2]},	$notes	 if $notes ne '';
 
-	my $card_folder = [ $card_tags ];
+	my @notes_list = ([], [], []);
+	push @{$notes_list[2]},	$notes	 if $notes ne '';
+
+	$cmeta{'folder'} = [ $cmeta{'tags'} ];
 
 	# When a user redefines an mSecure type, the card type and the field meanings are unknown.
 	# In this case (the type isn't available in %ll_typeMap), force the card type to 'note' and push
@@ -238,59 +241,59 @@ sub do_import {
 	#
 	if (! exists $ll_typeMap{$msecure_type}) {
 	    # skip 'userdefined' type not specifically included in a supplied import types list
-	    # XXX why?
 	    next if defined $imptypes and (! exists $imptypes->{'userdefined'});
 
 	    verbose "Renamed card type '$msecure_type' is not a default type, and is being mapped to Secure Notes\n";
 	    $itype = $otype = 'note';
-	    push @{$card_notes[0]}, join ': ', ll('Type'), $msecure_type;
+	    push @{$notes_list[0]}, join ': ', ll('Type'), $msecure_type;
 	    my $i;
 	    while (@$row) {
 		my ($key, $val) = ('Field_' . $i++, shift @$row);
 		debug "\tfield: $key => ", $val;
-		push @{$card_notes[1]}, join ': ', $key, $val;
+		push @{$notes_list[1]}, join ': ', $key, $val;
 	    }
 	}
 	else {
 	    $itype = $ll_typeMap{$msecure_type};
 	    $otype = $card_field_specs{$itype}{'type_out'} // $itype;
-	    $card_title = join ': ', $msecure_type, $card_title		if $itype ne $otype;
+	    $cmeta{'title'} = join ': ', $msecure_type, $cmeta{'title'}		if $itype ne $otype;
 
 	    # skip all types not specifically included in a supplied import types list
 	    next if defined $imptypes and (! exists $imptypes->{$itype});
 
 	    # If the row contains more columns than expected, this may be the mSecure quoting problem with
 	    # the notes (fourth) column.  To compensate, join the subsequent columns until the correct number
-	    # of columns remains.  # This bug is fixed in mSecure 3.5.4
+	    # of columns remains.
+	    # broken: win 3.5.4 bld 40918
 	    #
 	    if (@$row > @{$card_field_specs{$itype}{'fields'}}) {
-		verbose "**** Hit mSecure CSV quoting bug: row $n, card description '$card_title' - compensating...\n";
+		verbose "**** Hit mSecure CSV quoting bug: row $n, card description '$cmeta{'title'}' - compensating...\n";
 
 		# When the note leads with a double-quote, getline() leaves an empty string in column 4, and an extraneous
 		# double-quote gets added to the final disjoint notes segment, which gets removed below.
 		my $double_quote_added;
-		if (! @{$card_notes[2]}) {
-		    push @{$card_notes[2]}, '"';
+		if (! @{$notes_list[2]}) {
+		    push @{$notes_list[2]}, '"';
 		    $double_quote_added++;
 		}
 
 		while (@$row > @{$card_field_specs{$itype}{'fields'}}) {
-		    $card_notes[2][-1] .= ',' . shift @$row;
+		    $notes_list[2][-1] .= ',' . shift @$row;
 		}
-		$card_notes[2][-1] =~ s/"$//	if $double_quote_added;		# remove getline() added trailing double-quote
+		$notes_list[2][-1] =~ s/"$//	if $double_quote_added;		# remove getline() added trailing double-quote
 	    }
 
 	    # process field columns beyond column 4 (notes)
-	    for my $def (@{$card_field_specs{$itype}{'fields'}}) {
+	    for my $cfs (@{$card_field_specs{$itype}{'fields'}}) {
 		my $val = shift @$row;
-		debug "\tfield: $def->[2] => $val";
-		push @fieldlist, [ $def->[2] => $val ];			# retain field order
+		debug "\tfield: $cfs->[CFS_MATCHSTR] => $val";
+		push @fieldlist, [ $cfs->[CFS_MATCHSTR] => $val ];
 	    }
 	}
 
 	# a few cleanups and flatten notes
-	s/\Q$eol_seq\E/\n/g	for @{$card_notes[2]};
-	my $card_notes = myjoin "\n\n", map { myjoin "\n", @$_ } @card_notes;
+	s/\Q$eol_seq\E/\n/g	for @{$notes_list[2]};
+	$cmeta{'notes'} = myjoin "\n\n", map { myjoin "\n", @$_ } @notes_list;
 
 	# special treatment for identity address ('address' is a $k_address type}
 	if ($otype eq 'identity') {
@@ -306,19 +309,10 @@ sub do_import {
 	    splice @fieldlist, 5, 6, [ Address => \%h ];
 	}
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, $card_folder);
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
@@ -328,78 +322,13 @@ sub do_import {
 	warn "Unexpected failure parsing CSV: row $n";
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('identity',     'email2',	$Utils::PIF::sn_internet,	$Utils::PIF::k_string,    'email2');
-    add_new_field('identity',     'nickname',	$Utils::PIF::sn_identity,	$Utils::PIF::k_string,    'nickname');
-    add_new_field('membership',   'polid',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'policy ID');
-    add_new_field('membership',   'grpid',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'group ID');
-    add_new_field('membership',   'insured',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'insured');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $$notesref,
-	tags	=> $tags,
-	folder	=> $folder,
-    );
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey eq $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
-    }
-
-    return \%norm_cards;
 }
 
 # String localization.  mSecure has localized card types and field names, so these must be mapped

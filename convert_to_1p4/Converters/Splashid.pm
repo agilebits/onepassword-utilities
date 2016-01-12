@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Splashid 1.03;
+package Converters::Splashid 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Text::CSV;
 use Time::Local qw(timelocal);
 use Time::Piece;
@@ -38,13 +40,12 @@ my %card_field_specs = (
 	[ 'addr_email',		0, 'Email', ],
 	[ 'addr_phone',		0, 'Phone', ],
     ]},
-
     bankacct =>			{ textname => 'Bank Accounts', fields => [
 	[ 'accountNo',		0, 'Account #', ],
 	[ 'telephonePin',	0, 'PIN', ],
 	[ 'owner',		0, 'Name', ],
 	[ 'branchAddress',	0, 'Branch', ],
-	[ 'phone',		0, 'Phone #', ],
+	[ 'branchPhone',	0, 'Phone #' ],
     ]},
     clothes =>			{ textname => 'Clothes Size', type_out => 'note', fields => [
 	[ 'shirt_size',		0, 'Shirt Size', ],
@@ -74,7 +75,7 @@ my %card_field_specs = (
 	[ 'filescreator',	0, 'Creator', ],
 	[ 'filesdate',		0, 'Date', ],
     ]},
-    frequentflyer =>		{ textname => 'Frequent Flyer', type_out => 'membership', fields => [
+    frequentflyer =>		{ textname => 'Frequent Flyer', type_out => 'rewards', fields => [
 	[ 'membership_no',	0, 'Number', ],
 	[ 'member_name',	0, 'Name', ],
 	[ '_date',		0, 'Date', ],
@@ -85,9 +86,9 @@ my %card_field_specs = (
 	[ '_date',		0, 'Date', ],
     ]},
     insurance =>		{ textname => 'Insurance', type_out => 'membership', fields => [
-	[ 'polid',		0, 'Policy #', ],
-	[ 'grpid',		0, 'Group #', ],
-	[ 'insured',		0, 'Insured', ],
+	[ 'polid',		0, 'Policy #',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'policy #' ] } ],
+	[ 'grpid',		0, 'Group #',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group #' ] } ],
+	[ 'insured',		0, 'Insured',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'insured' ] } ],
 	[ '_date',		0, 'Date', ],
     ]},
     membership =>		{ textname => 'Memberships', fields => [
@@ -130,10 +131,12 @@ my %card_field_specs = (
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
+my $custom_field_num = 1;
+
 sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
-	'imptypes'  	=> undef,
+	'imptypes'  	=> qw/userdefined/,
 	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
 			       'modified|m' ],
 			   ],
@@ -191,18 +194,17 @@ sub do_import {
 
     my %Cards;
     my ($n, $rownum) = (1, 1);
-    my ($npre_explode, $npost_explode);
     my (@labels, @values, @labels_cust);
-    my ($card_type, $card_title, $card_tags, @card_notes, $card_folder, $card_modified);
+    my $card_type;
 
     while (my $row = $csv->getline ($io)) {
 	if ($row->[0] eq '' and @$row == 1) {
 	    warn "Skipping unexpected empty row: $n";
 	    next;
 	}
-	debug 'ROW: ', $rownum++;
+	debug 'ROW: ', $rownum++, ' -----------';
 
-	my ($itype, @fieldlist);
+	my ($itype, @fieldlist, %cmeta, @notes);
 
 	# SplashID vID 3 overview
 	#
@@ -240,14 +242,13 @@ sub do_import {
 		bail "Unexpected number of fields: ", scalar @$row;
 
 	    @values = (); @labels_cust = ();
-	    $card_notes[0] = ();
-	    $card_notes[1] = ();
-	    ($card_tags, $card_notes[2][0]) = @$row[@{$vid_table{$vid_version}}{'tags_col','notes_col'}];
+	    ($notes[0], $notes[1]) = ( (), () );
+	    ($cmeta{'tags'}, $notes[2][0]) = @$row[@{$vid_table{$vid_version}}{'tags_col','notes_col'}];
 	    @values 	 = @$row[0..10];
 	    @labels_cust = @$row[(@{$vid_table{$vid_version}{'labels_cust_col'}})];
 	    push @labels_cust, '';		# adds an empty 10th label, which is where Date Mod is in Labels
 
-	    $card_folder = [ $card_tags ];
+	    $cmeta{'folder'} = [ $cmeta{'tags'} ];
 
 	    # The last item in @labels and @values is a bit field value indicating which fields 1 to 10 are masked.
 	    # Ignore it for now.
@@ -257,90 +258,60 @@ sub do_import {
 	    # vID 4.0 file includes the attachment's original filename, encryption key, and attachment's file name
 	    if ($vid_version eq '4.0') {
 		if ($row->[$vid_table{$vid_version}{'attach_filename_col'}] ne '') {
-		    push @{$card_notes[1]}, join ': ', 'Original file name', $row->[$vid_table{$vid_version}{'attach_filename_col'}]
+		    push @{$notes[1]}, join ': ', 'Original file name', $row->[$vid_table{$vid_version}{'attach_filename_col'}]
 		}
 	    }
 	}
 
 
-	$card_title = '';
-	$card_modified = undef;
+	$cmeta{'title'} = '';
+	$cmeta{'modified'} = undef;
 	# When a user redefines a card type, the card type and the field semantics are unknown.
 	# In this case (the type isn't available in %ll_typeMap), force the card type to 'note' and push
 	# to notes the label:value pairs.
 	#
-	if (exists $ll_typeMap{$card_type}) {
-	    $itype = $ll_typeMap{$card_type};
+	$itype = $ll_typeMap{$card_type} // 'userdefined';
 
-	    # skip all types not specifically included in a supplied import types list
-	    next if defined $imptypes and (! exists $imptypes->{$itype});
+	# skip all types not specifically included in a supplied import types list
+	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	    # pair up the standard or card-specific labels with the values
-	    for (my $i = 0; $i <= 9; $i++) {
-		my ($label, $val) = ($labels_cust[$i] ne '' ? $labels_cust[$i] : $labels[$i], $values[$i]);
-		next if $val eq '';
-		if ($label eq 'Description') {
-		    $card_title = $val;
-		}
-		elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
-		    $card_modified = date2epoch($val);
-		}
-		else {
-		    # @fieldlist maintains card's field order
-		    push @fieldlist, [ $label => $val ]
-		}
-
-		# The Vehicles card uses "Make/Model" as the Description, so default to using the standard
-		# column 3 when $card_title is not set.
-		$card_title ||= $values[0] || '';
-	    }
-	}
-	else {
+	if ($itype eq 'userdefined') {
 	    debug "Card type '$card_type' is not a default type, and is being mapped to Secure Notes";
 	    $itype = 'note';
-	    my $i;
-	    for (my $i = 0; $i <= 9; $i++) {
-		my ($label, $val) = ($labels_cust[$i] ne '' ? $labels_cust[$i] : $labels[$i], $values[$i]);
-		debug "\tfield: $label => ", $val;
-		if ($label eq 'Description') {
-		    $card_title = $val;
-		}
-		elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
-		    $card_modified = date2epoch($val);
-		}
-		else {
-		    push @{$card_notes[1]}, join ': ', $label, $val		if $val ne '';
-		}
+	}
 
-		# The Vehicles card uses "Make/Model" as the Description, so default to using the standard
-		# first field value when $card_title is not set.
-		$card_title ||= $values[0] || '';
+	# pair up the standard or card-specific labels with the values
+	for (my $i = 0; $i <= 9; $i++) {
+	    my ($label, $val) = ($labels_cust[$i] ne '' ? $labels_cust[$i] : $labels[$i], $values[$i]);
+	    next if $val eq '';
+	    debug "\tfield: $label => ", $val;
+	    if ($label eq 'Description') {
+		$cmeta{'title'} = $val;
+	    }
+	    elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
+		$cmeta{'modified'} = date2epoch($val);
+	    }
+	    else {
+		# @fieldlist maintains card's field order
+		push @fieldlist, [ $label => $val ]
 	    }
 
-	    $card_title = join ': ', $card_type, $card_title;
+	    # The Vehicles card uses "Make/Model" as the Description, so default to using the standard
+	    # first field value when $cmeta{'title'} is not set.
+	    $cmeta{'title'} ||= $values[0] || '';
 	}
+
+	# prepend the card_type to the title for userdefined types;
+	$cmeta{'title'} = join ': ', $card_type, $cmeta{'title'}	if ! exists $ll_typeMap{$card_type};
 
 	# a few cleanups and flatten notes
-	my $card_notes = myjoin "\n\n", map { myjoin "\n", @$_ } @card_notes;
+	$notes[2][0] =~ s/\x{0b}/\n/g		if $^O eq 'MSWin32';
+	$cmeta{'notes'} = myjoin "\n\n", map { myjoin "\n", @$_ } @notes;
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist,
-	    { title	=> $card_title,
-	      tags	=> $card_tags,
-	      notes	=> $card_notes,
-	      folder	=> $card_folder,
-	      modified	=> $card_modified });
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
@@ -350,78 +321,13 @@ sub do_import {
 	warn "Unexpected failure parsing CSV: row $n";
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('bankacct',     'phone',	$Utils::PIF::sn_branchInfo,	$Utils::PIF::k_string,    'phone');
-    add_new_field('membership',   'polid',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'policy #');
-    add_new_field('membership',   'grpid',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'group #');
-    add_new_field('membership',   'insured',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'insured');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey eq $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 # Date converters
@@ -440,7 +346,7 @@ sub parse_date_string {
 
 sub date2epoch {
     my ($y, $m, $d) = parse_date_string @_;
-    return defined $y ? 0 + timelocal(0, 0, 0, $d, $m - 1, $y): $_[0];
+    return defined $y ? 0 + timelocal(0, 0, 3, $d, $m - 1, $y): $_[0];
 }
 
 1;

@@ -1,10 +1,10 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.06;
+package Utils::PIF 1.07;
 
 our @ISA	= qw(Exporter);
-our @EXPORT	= qw(create_pif_record create_pif_file add_new_field explode_normalized get_items_from_1pif typename_to_typekey);
+our @EXPORT	= qw(create_pif_record create_pif_file add_new_field clone_pif_field get_items_from_1pif typename_to_typekey prepare_icon);
 #our @EXPORT_OK	= qw();
 
 use v5.14;
@@ -16,7 +16,18 @@ use diagnostics;
 use JSON::PP;
 use UUID::Tiny ':std';
 use Date::Calc qw(check_date);
-use Utils::Utils qw(verbose debug bail pluralize unfold_and_chop myjoin);
+use Utils::Utils;
+use MIME::Base64;
+
+# Try to include GD library (for icon resizing)
+my ($can_GD, $can_ImageMagick);
+BEGIN {
+    eval "require GD";
+    $can_GD = 1 unless $@;
+    eval "require Image::Magick";
+    $can_ImageMagick = 1 unless $@;
+}
+
 
 # UUID string used by the 1PIF format to separate individual entries.
 # DaveT: "You know what, I wish we had thought that far ahead and made this an Easter Egg of sorts.
@@ -26,22 +37,37 @@ my $agilebits_1pif_entry_sep_uuid_str = '***5642bee8-a5ff-11dc-8314-0800200c9a66
 
 our %typeMap = (
     bankacct =>		{ typeName => 'wallet.financial.BankAccountUS',		title => 'Bank Account' },
+    bankacctau =>	{ typeName => 'wallet.financial.BankAccountAU',		title => 'Bank Account (AU)' },		# not currently supported
+    bankacctca =>	{ typeName => 'wallet.financial.BankAccountCA',		title => 'Bank Account (CA)' },		# not currently supported
+    bankacctch =>	{ typeName => 'wallet.financial.BankAccountCH',		title => 'Bank Account (CH)' },		# not currently supported
+    bankacctde =>	{ typeName => 'wallet.financial.BankAccountDE',		title => 'Bank Account (DE)' },		# not currently supported
+    bankacctuk =>	{ typeName => 'wallet.financial.BankAccountUK',		title => 'Bank Account (UK)' },		# not currently supported
     creditcard =>	{ typeName => 'wallet.financial.CreditCard',		title => 'Credit Card' },
     database =>		{ typeName => 'wallet.computer.Database',		title => 'Database' },
     driverslicense =>	{ typeName => 'wallet.government.DriversLicense',	title => 'Drivers License' },
     email =>		{ typeName => 'wallet.onlineservices.Email.v2',		title => 'Email' },
+    dotmac =>		{ typeName => 'wallet.onlineservices.DotMac',		title => 'MobileMe' },			# Legacy
+    emailv1 =>		{ typeName => 'wallet.onlineservices.Email',		title => 'Email (legacy)' },		# Legacy
+    ftp =>		{ typeName => 'wallet.onlineservices.FTP',		title => 'FTP' },			# Legacy
+    genericacct =>	{ typeName => 'wallet.onlineservices.GenericAccount',	title => 'Generic Account' },		# Legacy
+    instantmessenger =>	{ typeName => 'wallet.onlineservices.InstantMessenger',	title => 'Instant Messenger' },		# Legacy
+    isp =>		{ typeName => 'wallet.onlineservices.ISP',		title => 'Internet Provider' },		# Legacy
+    itunes =>		{ typeName => 'wallet.onlineservices.iTunes',		title => 'iTunes' },			# Legacy
+    amazons3 =>		{ typeName => 'wallet.onlineservices.AmazonS3',		title => 'Amazon S3' },			# Legacy
     identity =>		{ typeName => 'identities.Identity',			title => 'Identity' },
     login =>		{ typeName => 'webforms.WebForm',			title => 'Login' },
     membership =>	{ typeName => 'wallet.membership.Membership',		title => 'Membership' },
     note =>		{ typeName => 'securenotes.SecureNote',			title => 'Secure Note' },
     outdoorlicense =>	{ typeName => 'wallet.government.HuntingLicense',	title => 'Outdoor License' },
     passport =>		{ typeName => 'wallet.government.Passport',		title => 'Passport' },
+    password =>		{ typeName => 'passwords.Password',			title => 'Password' },
     rewards =>		{ typeName => 'wallet.membership.RewardProgram',	title => 'Reward Program' },
     server =>		{ typeName => 'wallet.computer.UnixServer',		title => 'Server' },
     socialsecurity =>	{ typeName => 'wallet.government.SsnUS',		title => 'Social Security Number' },
     software =>		{ typeName => 'wallet.computer.License',		title => 'Software License' },
     wireless =>		{ typeName => 'wallet.computer.Router',			title => 'Wireless Router' },
 );
+
 
 my %typenames_to_typekeys;	# maps typeName --> key from %typeMap above
 
@@ -66,6 +92,8 @@ our $sn_extra		= 'extra.More Information';
 our $sn_address		= 'address.Address';
 our $sn_internet	= 'internet.Internet Details';
 our $sn_identity	= 'name.Identification';
+# --addfields section name
+our $sn_addfields	= 'originalfields.Original Fields';
 
 our $k_string		= 'string';
 our $k_menu		= 'menu';
@@ -230,6 +258,10 @@ my %pif_table = (
 	[ 'birthplace',		$sn_main,		$k_string,	'place of birth' ], 
 	[ 'issue_date',		$sn_main,		$k_date,	'issued on' ], 
 	[ 'expiry_date',	$sn_main,		$k_date,	'expiry date' ], 
+    ],
+    password => [
+	[ 'password', 		undef,			'P',		'password' ], 
+	[ 'url', 		undef,			$k_string,	'website' ], 
     ],
     rewards => [
 	[ 'company_name',	$sn_main,		$k_string,	'company name' ], 
@@ -505,131 +537,147 @@ my %country_codes = (
     zw => qr/^zw|Zimbabwe$/i,
 );
 
+my %ordered_sections;
 sub create_pif_record {
-    my ($type, $card) = @_;
+    my ($type, $cmeta) = @_;
 
     my $rec = {};
-    # cycle in order through the defintions for the given type, testing if the key exists in the imported values hash %card.
-    my @ordered_sections = ();
     my @to_notes;
     my $defs = $pif_table{$type};
 
-    $rec->{'title'} = $card->{'title'} // 'Untitled';
+    $rec->{'title'} = $cmeta->{'title'} // 'Untitled';
     debug "Title: ", $rec->{'title'};
 
-    # move out fields that are not defined in the pif_table, to be added to notes later
-    my %cardh;
-    while (my $f = pop @{$card->{'fields'}}) {
+    while (my $f = pop @{$cmeta->{'fields'}}) {
 	my @found = grep { $f->{'outkey'} eq $_->[0] } @$defs;
-	if (@found) {
-	    # turn fields array into hash for easier processing
-	    $cardh{$f->{'outkey'}} = $f;
-	    push @to_notes, $f		if $f->{'keep'};
-	    @found > 1 and
-		die "Duplicate card key detected - please report: $f->{'outkey'}: ", map {$_->[0] . " "} @found;
-	}
-	else {
+
+	# Fields not defined in the pif_table go to notes, unless the addfields option is set
+	# whereby custom fields will be added to a custom section instead.
+	if (not (@found or $main::opts{'addfields'})) {
+	    debug "  key test($f->{'outkey'}), Not found";
 	    push @to_notes, $f;
 	}
-    }
-
-    for my $def (@$defs) {
-	my $key = $def->[0];
-
-	debug "  key test($key)", ! exists $cardh{$key} ?
-	    (', ', 'Not found') :
-	    (': ', to_string($cardh{$key}{'value'}));
- 
-	next if !exists $cardh{$key};
-
-	if ($type eq 'login') {
-	    if ($cardh{$key}{'value'} ne '') {
-		if ($key eq 'username' or $key eq 'password') {
-		    push @{$rec->{'secureContents'}{'fields'}}, { 
-			    'designation' => $key, name => $def->[3], 'type' => $def->[2], 'value' => $cardh{$key}{'value'}
-			};
-		}
-		elsif ($key eq 'url') {
-		    push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $cardh{$key}{'value'} };
-		    # Need to add Location field so that the item appears in 1Password for Windows' extension.
-		    $rec->{'location'} = $cardh{$key}{'value'};
-		}
-	    }
-	}
-
-	if (my @kv_pairs = type_conversions($def->[2], $key, \%cardh)) {
-	    # add key/value pairs to top level secureContents.
-	    while (@kv_pairs) {
-		$rec->{'secureContents'}{$kv_pairs[0]} = $kv_pairs[1];
-		shift @kv_pairs; shift @kv_pairs;
-	    }
-
-	    # add entry to secureContents.sections when defined
-	    if (defined $def->[1]) {
-		my $href = { 'n' => $key, 'k' => $def->[2], 't' => $def->[3], 'v' => $cardh{$key}{'value'} };
-		# add any attributes
-		$href->{'a'} = { @$def[4..$#$def] }   if @$def > 4;
-
-		# maintain the section order for later output
-		my $section_name = join '.', 'secureContents', $def->[1];
-		push @ordered_sections, $section_name	if !exists $rec->{'_sections'}{$section_name};
-
-		push @{$rec->{'_sections'}{join '.', 'secureContents', $def->[1]}}, $href;
-	    }
-	}
 	else {
-	    # failed kind conversions
-	    push @to_notes, $cardh{$key};
-	    delete $cardh{$key};
+	    bail "Duplicate card key detected - please report: $f->{'outkey'}: ", map {$_->[0] . " "} @found	if @found > 1;
+	    push @to_notes, $f		if $f->{'keep'};
+
+	    my $key = $f->{'outkey'};
+	    my $def = $found[0];
+	    if (not defined $def) {
+		# this is not a 1Password field, but --addfields was specified, so add
+		# the record as a custom field.
+
+		$def->[1] = $sn_addfields;
+		$def->[2] = $k_string;
+		$def->[3] = lc $f->{'inkey'};
+	    }
+
+	    debug "  key test($f->{'outkey'}): ", to_string($f->{'value'});
+     
+	    if ($type eq 'login') {
+		if ($f->{'value'} ne '') {
+		    if ($f->{'outkey'} eq 'username' or $f->{'outkey'} eq 'password') {
+			push @{$rec->{'secureContents'}{'fields'}}, { 
+				'designation' => $f->{'outkey'}, name => $def->[3], 'type' => $def->[2], 'value' => $f->{'value'}
+			    };
+		    }
+		    elsif ($f->{'outkey'} eq 'url') {
+			push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $f->{'value'} };
+			# Need to add Location field so that the item appears in 1Password for Windows' extension.
+			$rec->{'location'} = $f->{'value'};
+		    }
+		}
+	    }
+	    elsif ($type eq 'password') {
+		if ($f->{'value'} ne '') {
+		    if ($f->{'outkey'} eq 'url') {
+			push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $f->{'value'} };
+			# Need to add Location field so that the item appears in 1Password for Windows' extension.
+			$rec->{'location'} = $f->{'value'};
+		    }
+		}
+	    }
+
+	    if (my @kv_pairs = type_conversions($def->[2], $f)) {
+		# add key/value pairs to top level secureContents.
+		while (@kv_pairs) {
+		    $rec->{'secureContents'}{$kv_pairs[0]} = $kv_pairs[1];
+		    shift @kv_pairs; shift @kv_pairs;
+		}
+
+		# add entry to secureContents.sections when defined
+		if (defined $def->[1]) {
+		    my $href = { 'n' => $f->{'outkey'}, 'k' => $def->[2], 't' => $def->[3], 'v' => $f->{'value'} };
+		    # add any attributes
+		    $href->{'a'} = { @$def[4..$#$def] }   if @$def > 4;
+		    push @{$rec->{'_sections'}{join '.', 'secureContents', $def->[1]}}, $href;
+		}
+	    }
+	    else {
+		push @to_notes, $f;			# failed kind conversions
+	    }
 	}
     }
 
-    for (@ordered_sections) {
+    # Output the sections in the same order as in the pif_table{$type}
+    my $i;
+    %ordered_sections = ();
+    for (@{$pif_table{$type}}) {
+	next unless $_->[1];
+	my $sname = join '.', 'secureContents', $_->[1];
+	next if exists $ordered_sections{$sname};
+	$ordered_sections{$sname} = $i++;
+    }
+
+    for (sort bysections keys %{$rec->{'_sections'}}) {
 	my (undef, $name, $title) = split /\./, $_;
 	my $href = { 'name' => $name, 'title' => $title, 'fields' => $rec->{'_sections'}{$_} };
 	push @{$rec->{'secureContents'}{'sections'}}, $href;
     }
     delete $rec->{'_sections'};
 
-    if (exists $card->{'notes'}) {
-	$rec->{'secureContents'}{'notesPlain'} = ref($card->{'notes'}) eq 'ARRAY' ? join("\n", @{$card->{'notes'}}) : $card->{'notes'};
+    if (exists $cmeta->{'notes'}) {
+	$rec->{'secureContents'}{'notesPlain'} = ref($cmeta->{'notes'}) eq 'ARRAY' ? join("\n", @{$cmeta->{'notes'}}) : $cmeta->{'notes'};
 	debug "  notes: ", unfold_and_chop $rec->{'secureContents'}{'notesPlain'};
     }
 
     $rec->{'typeName'} = $typeMap{$type}{'typeName'} // $typeMap{'note'}{'typeName'};
 
-    if (exists $card->{'tags'}) {
-	push @{$rec->{'openContents'}{'tags'}}, ref($card->{'tags'}) eq 'ARRAY' ? (@{$card->{'tags'}}) : $card->{'tags'};
-	debug "  tags: ", unfold_and_chop ref($card->{'tags'}) eq 'ARRAY' ? join('; ', @{$card->{'tags'}}) : $card->{'tags'};
-    }
+    push @{$rec->{'openContents'}{'tags'}}, ref($cmeta->{'tags'}) eq 'ARRAY' ? (@{$cmeta->{'tags'}}) : $cmeta->{'tags'} if exists $cmeta->{'tags'};
+    push @{$rec->{'openContents'}{'tags'}}, split(/\s*,\s*/, $main::opts{'tags'})				     if exists $main::opts{'tags'};
+    debug "  tags: ", unfold_and_chop(join('; ', @{$rec->{'openContents'}{'tags'}}))				     if exists $rec->{'openContents'}{'tags'};
 
-    if ($main::opts{'folders'} and exists $card->{'folder'} and @{$card->{'folder'}}) {
-	add_to_folder_tree(\$gFolders, @{$card->{'folder'}});
-	my $uuid = uuid_from_path(\$gFolders, @{$card->{'folder'}});
+    if ($main::opts{'folders'} and exists $cmeta->{'folder'} and @{$cmeta->{'folder'}}) {
+	add_to_folder_tree(\$gFolders, @{$cmeta->{'folder'}});
+	my $uuid = uuid_from_path(\$gFolders, @{$cmeta->{'folder'}});
 	$rec->{'folderUuid'} = $uuid	if defined $uuid;
     }
 
-    # map any remaninging fields to notes
-    if (exists $rec->{'secureContents'}{'notesPlain'} and $rec->{'secureContents'}{'notesPlain'} ne '' and @to_notes) {
-	$rec->{'secureContents'}{'notesPlain'} .= "\n"
-    }
+    # map any remaining fields to notes
+    my @n;
     for (@to_notes) {
 	my $valuekey = $_->{'keep'} ? 'valueorig' : 'value';
 	next if $_->{$valuekey} eq '';
+	push @n, join ': ', $_->{'inkey'}, $_->{$valuekey};
 	debug " *unmapped card field pushed to notes: $_->{'inkey'}";
-	$rec->{'secureContents'}{'notesPlain'} .= "\n"	if exists $rec->{'secureContents'}{'notesPlain'} and $rec->{'secureContents'}{'notesPlain'} ne '';
-	$rec->{'secureContents'}{'notesPlain'} .= join ': ', $_->{'inkey'}, $_->{$valuekey};
+    }
+    if (@n) {
+	$rec->{'secureContents'}{'notesPlain'} = myjoin("\n", @n,
+	    (exists $rec->{'secureContents'}{'notesPlain'} and $rec->{'secureContents'}{'notesPlain'} ne '') ? ("\n" . $rec->{'secureContents'}{'notesPlain'}) : undef);
     }
 
     $rec->{'uuid'} = new_uuid();
 
     # force updatedAt and createdAt to be ints, not strings
-    if (exists $card->{'modified'} and defined $card->{'modified'}) {
-	$rec->{'updatedAt'} = 0 + $card->{'modified'}	if $main::opts{'modified'};
+    if (exists $cmeta->{'modified'} and defined $cmeta->{'modified'}) {
+	$rec->{'updatedAt'} = 0 + $cmeta->{'modified'}	if $main::opts{'modified'};
     }
 
     # set the created time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
     $rec->{'createdAt'} = 946713600		if $type eq 'login' and $main::opts{'watchtower'};
+
+    # set the icon if one exists
+    $rec->{'secureContents'}{'customIcon'} = $cmeta->{'icon'}	if $cmeta->{'icon'};
 
     # for output file comparison testing
     if ($main::opts{'testmode'}) {
@@ -665,9 +713,9 @@ sub create_pif_file {
 	    }
 	}
 	$ntotal += $n;
-	verbose "Exported $n $type item", pluralize($n);
+	verbose "Exported $n $type ", pluralize('item', $n);
     }
-    verbose "Exported $ntotal total item", pluralize($ntotal);
+    verbose "Exported $ntotal total ", pluralize('item', $ntotal);
 
     if ($gFolders) {
 	output_folder_records($outfh, $gFolders, undef);
@@ -709,7 +757,6 @@ sub uuid_from_path {
     return undef;
 }
 
-
 sub output_folder_records {
     my ($outfh, $f, $parent_uuid) = @_;
     return unless defined $f;
@@ -727,11 +774,12 @@ sub output_folder_records {
 
 sub add_new_field {
     # [ 'url',                $sn_main,               $k_string,      'URL' ],
-    #my ($type, $after, $key, $section, $kind, $text) = @_;
     my ($type, $key, $section, $kind, $text) = (shift, shift, shift, shift, shift);
+    #my ($type, $after, $key, $section, $kind, $text) = @_;
 
     die "add_new_field: unsupported type '$type' in %pif_table"	if !exists $pif_table{$type};
 =cut
+    # code to add a field after a given fiend, but doesn't work in 1P
     my $i = 0;
     foreach (@{$pif_table{$type}}) {
 	if ($_->[0] eq $after) {
@@ -742,33 +790,43 @@ sub add_new_field {
     $DB::single = 1;
     splice @{$pif_table{$type}}, $i+1, 0, [$key, $section, $kind, $text];
 =cut
-    push @{$pif_table{$type}}, [$key, $section, $kind, $text, @_];
-    1;
+    if (!grep {$_->[0] eq $key and $_->[1] eq $section } @{$pif_table{$type}}) {
+	push @{$pif_table{$type}}, [$key, $section, $kind, $text, @_];
+    }
+}
+
+sub clone_pif_field {
+    my ($type, $field) = @_;
+    my @found = grep { $_->[0] eq $field } @{$pif_table{$type}};
+    die "cloned section not found in %pif_table ($type : $field): please report"	unless @found;
+    my @copy = @{$found[0]};
+    shift @copy;	# don't need to the field key
+    return \@copy;
 }
 
 # Performs various conversions on key, value pairs, depending upon type=k values.
 # Some key/values will be exploded into multiple key/value pairs.
 sub type_conversions {
-    my ($type, $key, $cref) = @_;
+    my ($type, $f) = @_;
 
     return ()	if not defined $type;
 
-    if ($type eq $k_date and $cref->{$key}{'value'} !~ /^-?\d+$/) {
+    if ($type eq $k_date and $f->{'value'} !~ /^-?\d+$/) {
 	return ();
     }
 
     if ($type eq $k_gender) {
-	return ( $key => $cref->{$key}{'value'} =~ /F/i ? 'female' : 'male' );
+	return ( $f->{'outkey'} => $f->{'value'} =~ /F/i ? 'female' : 'male' );
     }
 
     if ($type eq $k_monthYear) {
 	# monthYear types are split into two top level keys: keyname_mm and keyname_yy
 	# their value is stored as YYYYMM
 	# XXX validate the date w/a module?
-	if (my ($year, $month) = ($cref->{$key}{'value'} =~ /^(\d{4})(\d{2})$/)) {
+	if (my ($year, $month) = ($f->{'value'} =~ /^(\d{4})(\d{2})$/)) {
 	    if (check_date($year,$month,1)) {					# validate the date
-		return ( join('_', $key, 'yy') => $year,
-			 join('_', $key, 'mm') => $month );
+		return ( join('_', $f->{'outkey'}, 'yy') => $year,
+			 join('_', $f->{'outkey'}, 'mm') => $month );
 	    }
 	}
     }
@@ -787,65 +845,24 @@ sub type_conversions {
 	    unionpay	  => qr/union\s*pay|\Aup\z/i,
 	);
 
-	if (my @matched = grep { $cref->{$key}{'value'} =~ $cctypes{$_} } keys %cctypes) {
-	    return ( $key => $matched[0] );
+	if (my @matched = grep { $f->{'value'} =~ $cctypes{$_} } keys %cctypes) {
+	    return ( $f->{'outkey'} => $matched[0] );
 	}
     }
-    elsif ($type eq $k_address and $key eq 'address') {
+    elsif ($type eq $k_address and $f->{'outkey'} eq 'address') {
 	# address is expected to be in hash w/keys: street city state country zip 
-	my $h = $cref->{'address'}{'value'};
+	my $h = $f->{'value'};
 	# at the top level in secureContents, key 'address1' is used instead of key 'street'
 	$h->{'country'} = country_to_code($h->{'country'})	if $h->{'country'} and !exists $country_codes{$h->{'country'}};
 	my %ret = ( 'address1' => $h->{'street'}, map { exists $h->{$_} ? ($_ => $h->{$_}) : () } qw/city state zip country/ );
 	return %ret;
     }
     else {
-	return ( $key => $cref->{$key}{'value'} );
+	return ( $f->{'outkey'} => $f->{'value'} );
     }
 
     # unhandled - unmapped items will ultimately go to a card's notes field
     return ();
-}
-
-# explodes normalized card data into one or more normalized cards, based on the 'outtype' value in 
-# the normalized card data.  The exploded card list is returned as a per-type hash.
-sub explode_normalized {
-    my ($itype, $norm_card) = @_;
-
-    my (%oc, $nc);
-    # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
-    if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes folder modified/) {
-	    # trigger the for() loop below
-	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
-	}
-    }
-    else {
-	while (my $field = pop @{$norm_card->{'fields'}}) {
-	    push @{$oc{$field->{'outtype'}}{'fields'}}, { %$field };
-	}
-    }
-
-    # for each of the output card types
-    for my $type (keys %oc) {
-	my $new_title;
-	# look for and use any title replacements
-	if (my @found = grep { $_->{'as_title'}} @{$oc{$type}{'fields'}}) {
-	    @found > 1 and die "More than one 'as_title' keywords found for type '$type' - please report";
-	    $new_title = $found[0]->{'as_title'};
-	    debug "\t\tnew title for exploded card type '$type':  $new_title";
-	}
-
-	# add any supplimentatl title additions
-	my $added_title = myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
-	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
-
-	for (qw/tags notes folder modified/) {
-	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
-	}
-    }
-
-    return \%oc;
 }
 
 # Do some internal checking that the %pif_table has expected values.
@@ -885,8 +902,15 @@ sub get_items_from_1pif {
     my $file = shift;
     my @items;
 
-    open my $io, "<", $file
-	or bail "Unable to open 1PIF file: $file\n$!";
+    my $data = slurp_file($file);
+
+    # eliminate any extraneous UTF-8 BOM
+    $data =~ s/^\x{ef}\x{bb}/\x{bf}/; 		#EF BB BF
+    utf8::encode($data);
+
+    # reopen the file descriptor reading from $data
+    open my $io,  "<:encoding(utf8)", \$data or
+	bail "Unable to reopen IO handle as a variable";
 
     while ($_ = <$io>) {
 	chomp $_;
@@ -899,11 +923,10 @@ sub get_items_from_1pif {
     return \@items
 }
 
-
 sub to_string {
     return $_[0] 	if ref $_[0] eq '';
 
-    return join('; ', map { "$_: $_[0]->{$_}" } keys %{$_[0]});
+    return map { join ':', $_, $_[0]->{$_} // '' } keys %{$_[0]};
 }
 
 sub country_to_code {
@@ -921,6 +944,48 @@ sub new_uuid {
     my $uuid = create_uuid_as_string(UUID::Tiny->UUID_RANDOM());
     $uuid =~ s/-//g;
     return uc $uuid
+}
+
+# Prepare an icon to be suitable to the 1PIF
+sub prepare_icon {
+    my ($type,$data) = @_;
+
+    my $ret;
+    if ($can_ImageMagick) {
+	#$image = Image::Magick->new(size=>'64x64');
+	my $image = Image::Magick->new(magick => $type);
+	my $status = $image->BlobToImage($data);
+	$image->Resize(geometry=>'64x64>');	# 64x64, but don't enlarge (better quality)
+	$ret = $image->ImageToBlob();
+    }
+    elsif ($can_GD) {
+	my $srcimage = GD::Image->new($data);
+	my $dstimage = new GD::Image(64,64);
+
+	# resize the image
+	$dstimage->copyResized($srcimage,0,0, 0,0, 64,64, $srcimage->width, $srcimage->height);
+
+	if    ($type eq 'JPEG')	{ $ret = $dstimage->jpeg; }
+	elsif ($type eq 'PNG')	{ $ret = $dstimage->png; }
+	elsif ($type eq 'GIF')	{ $ret = $dstimage->gif; }
+	else			{ say "Unsupported icon image type, please report: $type" }
+    }
+    else {
+	bail "The --icon option was specified, but no graphics libraries were found.\n",
+	     "Install the Image::Magick or GD modules, or remove the --icon option.";
+    }
+
+    return $ret ? encode_base64($ret, '') : undef;
+}
+
+my $full_sn_addfields	= join '.', 'secureContents', $sn_addfields;
+# sort sections based on pif_table entry
+sub bysections {
+    return  1 if not exists $ordered_sections{$a};
+    return -1 if not exists $ordered_sections{$b};
+    return  1 if $a eq $full_sn_addfields;		# sort the section added by --addfields last
+    return -1 if $b eq $full_sn_addfields;
+    return $ordered_sections{$a} cmp $ordered_sections{$b};
 }
 
 1;

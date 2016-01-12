@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Handysafe 1.00;
+package Converters::Handysafe 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,99 +18,126 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use XML::XPath;
 use XML::XPath::XMLParser;
 use Time::Local qw(timelocal);
 use Date::Calc qw(check_date Date_to_Days Moving_Window);
+use File::Spec;
 
 my %card_field_specs = (
     bankacct =>			{ textname => undef, fields => [
-	[ 'bankName',		0, qr/\bBank\b/, ],
-	[ 'accountNo',          1, qr/^Account$/, ],
-	[ 'accountType',	0, qr/Type/, ],
-	[ '_branchNumber',	1, qr/Branch number/, ],
-	[ 'swift',		1, qr/SWIFT/, ],
-	[ 'branchPhone',	0, qr/Phone/, ],
-	[ '_other',		0, qr/Other/, ],
+	[ 'bankName',		0, 'Bank', ],
+	[ 'accountNo',          1, 'Account', ],
+	[ 'accountType',	0, 'Type', ],
+	[ '_branchNumber',	1, 'Branch number',	{ custfield => [ $Utils::PIF::sn_branchInfo, $Utils::PIF::k_string, 'branch number' ] } ],
+	[ 'swift',		1, 'SWIFT', ],
+	[ 'branchPhone',	0, 'Phone', ],
+	[ '_other',		0, 'Other', ],
+    ]},
+    carinfo =>		        { textname => undef, type_out => 'note', fields => [
+	[ '_model',		1, 'Model', ],
+	[ '_made',		1, 'Made', ],
+	[ '_year',		1, 'Year', ],
+	[ '_license',		1, 'License', ],
+	[ '_expires',		0, 'Expires', ],
+	[ '_vin',		1, 'VIN', ],
+	[ '_Insurance',		1, 'Insurance', ],
+	[ '_policynum',		0, 'Policy number', ],
+	[ '_phone',		0, 'Phone', ],
+	[ '_insexpires',	0, 'Expires 2', ],	# see 'Fixup: disambiguation'
     ]},
     creditcard =>		{ textname => undef, fields => [
-	[ 'bank',		0, qr/\bBank\b/, ],
-	[ '_firstname',		0, qr/First name/, ],	# see post_process_normalized
-	[ '_lastname',		0, qr/Last name/, ],	# see post_process_normalized
-	[ 'ccnum',		0, qr/Card number/, ],
-	[ 'pin',		0, qr/\bPIN\b/, ],
-	[ 'cvv',		1, qr/CVC code/, ],
-	[ 'expiry',		0, qr/Expires/,		{ func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
-	[ 'phoneTollFree',	1, qr/If lost, call/, ],
-	[ 'type',		0, undef ],		# special case - will never match, used to set card type when possible
+	[ 'bank',		0, 'Bank', ],
+	[ '_firstname',		0, 'First name', ],	# see 'Fixup: combine names'
+	[ '_lastname',		0, 'Last name', ],	# see 'Fixup: combine names'
+        [ 'cardholder',         0, 'First + Last', ],	# see 'Fixup: combine names'; input never matches
+	[ 'ccnum',		0, 'Card number', ],
+	[ 'pin',		0, 'PIN', ],
+	[ 'cvv',		1, 'CVC code', ],
+	[ 'expiry',		0, 'Expires',		{ func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
+	[ 'phoneTollFree',	1, 'If lost, call', ],
+	[ 'type',		0, 'Card Type' ],	# see 'Fixup: credit card type'; input never matches
     ]},
     driverslicense =>           { textname => undef, icon => 8, fields => [
-        [ 'state',      	0, qr/^Location/ ],
-        [ 'number',             0, qr/^Number$/ ],
-        [ '_drissued',          0, qr/^Issued/ ],
-        [ 'expiry_date',        0, qr/^Expires/,	 { func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
-	[ '_other',		0, qr/Other/, ],
+        [ 'state',      	0, 'Location' ],
+        [ 'number',             0, 'Number' ],
+        [ '_drissued',          0, 'Issued' ],
+        [ 'expiry_date',        0, 'Expires',	 	{ func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
+	[ '_other',		0, 'Other', ],
     ]},
     email =>			{ textname => undef, fields => [
-        [ 'pop_username',      	0, qr/^Email|Login$/ ],
-        [ 'pop_password',      	0, qr/^Password/ ],
-        [ 'pop_server',      	1, qr/^POP3$/ ],
-        [ 'smtp_server',      	1, qr/^SMTP$/ ],
-	[ '_other',		0, qr/Other/, ],
+        [ 'pop_username',      	0, 'Email' ],
+        [ 'pop_username',      	0, 'Login' ],
+        [ 'pop_password',      	0, 'Password' ],
+        [ 'pop_server',      	1, 'POP3' ],
+        [ 'smtp_server',      	1, 'SMTP' ],
+	[ '_other',		0, 'Other', ],
+    ]},
+    idcard =>                   { textname => undef, type_out => 'membership', fields => [
+        [ 'org_name',           2, 'Organization', ],
+        [ '_firstname',         0, 'First name', ],	# see 'Fixup: combine names'
+        [ '_lastname',          0, 'Last name', ],	# see 'Fixup: combine names'
+        [ 'member_name',        0, 'First + Last', ],	# see 'Fixup: combine names'; input never matches
+        [ 'membership_no',      2, 'ID', ],
     ]},
     lockcode =>                 { textname => undef, type_out => 'login', fields => [
-        [ 'combolocation',      0, qr/^Location/ ],
-        [ 'password',           1, qr/^Code$/ ],
-        [ 'comboother',         0, qr/Other/ ],
+        [ 'combolocation',      0, 'Location' ],
+        [ 'password',           1, 'Code' ],
+        [ 'comboother',         0, 'Other' ],
     ]},
     login =>                    { textname => undef, fields => [
-        [ 'username',           0, qr/^Login|Yahoo! ID|Live ID|Email|UIN$/, ],
-        [ 'password',           0, qr/Password/, ],
-        [ 'url',                1, qr/URL/, ],
-        [ '_other',             0, qr/Other/, ],
+        [ 'username',           0, 'Login', ],
+        [ 'username',           0, 'Yahoo! ID', ],
+        [ 'username',           0, 'Live ID', ],
+        [ 'username',           0, 'Email', ],
+        [ 'username',           0, 'UID', ],
+        [ 'password',           0, 'Password', ],
+        [ 'url',                1, 'URL', ],
+        [ '_other',             0, 'Other', ],
     ]},
     membership =>               { textname => undef, fields => [
-        [ 'org_name',           1, qr/^ID|Organization$/, ],
-        [ 'phone',              0, qr/Phone/ ],
-        [ '_firstname',         0, qr/First name/, ],	# see post_process_normalized
-        [ '_lastname',          0, qr/Last name/, ],	# see post_process_normalized
-        [ 'membership_no',      0, qr/ID/, ],
-        [ 'expiry_date',        0, qr/Expires/,		{ func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
-        [ '_other',             0, qr/Other/ ],
+        [ 'org_name',           2, 'ID', ],
+        [ 'phone',              0, 'Phone' ],
+        [ 'expiry_date',        2, 'Expires',		{ func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
+        [ '_other',             0, 'Other' ],
     ]},
     passport =>                 { textname => undef, fields => [
-        [ 'type',               0, qr/Type/, ],
-        [ 'number',             0, qr/Number/, ],
-        [ '_firstname',         0, qr/First name/, ],	# see post_process_normalized
-        [ '_lastname',          0, qr/Last name/, ],	# see post_process_normalized
-        [ 'sex',                0, qr/Sex/ ],
-        [ 'birthdate',          0, qr/^Birth$/,		{ func => sub { return date2epoch($_[0], 2) } } ],
-        [ 'birthplace',         1, qr/^Place$/, ],
-        [ 'nationality',        1, qr/Nation/, ],
-        [ 'issue_date',         0, qr/Issued/, 		{ func => sub { return date2epoch($_[0], 2) } } ],
-        [ 'expiry_date',        0, qr/Expires/, 	{ func => sub { return date2epoch($_[0], 2) } } ],
-        [ 'type',               1, qr/Authority/, ],
+        [ 'type',               0, 'Type', ],
+        [ 'number',             0, 'Number', ],
+        [ '_firstname',         0, 'First name', ],	# see 'Fixup: combine names'
+        [ '_lastname',          0, 'Last name', ],	# see 'Fixup: combine names'
+        [ 'fullname',           0, 'First + Last', ],	# see 'Fixup: combine names'; input never matche
+        [ 'sex',                0, 'Sex' ],
+        [ 'birthdate',          0, 'Birth',		{ func => sub { return date2epoch($_[0], 2) } } ],
+        [ 'birthplace',         0, 'Place', ],
+        [ 'nationality',        1, 'Nation', ],
+        [ 'issue_date',         0, 'Issued', 		{ func => sub { return date2epoch($_[0], 2) } } ],
+        [ 'expiry_date',        0, 'Expires', 		{ func => sub { return date2epoch($_[0], 2) } } ],
+        [ 'type',               1, 'Authority', ],
     ]},
     password =>                 { textname => undef, type_out => 'server', fields => [
-        [ 'username',           0, qr/Login/, ],
-        [ 'password',           0, qr/Password/, ],
-        [ '_access',            1, qr/Access/, ],
-        [ '_other',             0, qr/Other/, ],
+        [ 'username',           0, 'Login', ],
+        [ 'password',           0, 'Password', ],
+        [ '_access',            1, 'Access', ],
+        [ '_other',             0, 'Other', ],
     ]},
-    wireless =>                { textname => undef, fields => [
-        [ '_access',           0, qr/Access/, ],
-        [ 'wireless_password', 0, qr/Password/, ],
-        [ 'network_name',      1, qr/^SSID$/, ],
-        [ '_ip',               1, qr/^IP$/, ],
-        [ '_dns',              0, qr/^DNS$/, ],
-        [ '_other',            0, qr/Other/, ],
+    wireless =>                 { textname => undef, fields => [
+        [ '_access',            0, 'Access', ],
+        [ 'wireless_password',  0, 'Password', ],
+        [ 'network_name',       1, 'SSID', ],
+        [ '_ip',                1, 'IP', ],
+        [ '_dns',               0, 'DNS', ],
+        [ '_other',             0, 'Other', ],
     ]},
 );
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
 my @today = Date::Calc::Today();			# for date comparisons
+my %localized;
 
 # Icon number to type mapping, to help find_card_type determine card type.
 # See also Utils::PIF::kind_conversions for credit card name patterns.
@@ -132,7 +159,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+	'opts'		=> [ [ q{-l or --lang <lang>        # language in use: nl-nl },
+			       'lang|l=s'	=> sub { init_localization_table($_[1]) or Usage(1, "Unknown language type: '$_[1]'") } ],
+			   ],
     };
 }
 
@@ -140,98 +169,99 @@ sub do_import {
     my ($file, $imptypes) = @_;
     my %Cards;
 
-    {
-	local $/ = undef;
-	open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
-	$_ = <$fh>;
-	close $fh;
+    $_ = slurp_file($file);
+
+    # Localize the %card_field_specs table
+    if (scalar %localized) {
+	for my $key (keys %card_field_specs) {
+	    for my $cfs (@{$card_field_specs{$key}{'fields'}}) {
+		$cfs->[CFS_OPTS]{'i18n'} = ll($cfs->[CFS_MATCHSTR]);
+	    }
+	}
     }
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
 
     my $xp = XML::XPath->new(xml => $_);
-    my $groupnodes = $xp->find('//Folder[@name]');
+    my $cardnodes = $xp->find('//Card[@name]');
+    foreach my $cardnode (@$cardnodes) {
+	my @groups;
 
-    foreach my $groupnode ($groupnodes->get_nodelist) {
-	my (@groups, $card_tags);
-	for (my $node = $groupnode; my $parent = $node->getParentNode(); $node = $parent) {
+	for (my $node = $cardnode->getParentNode(); my $parent = $node->getParentNode(); $node = $parent) {
 	    my $v = $xp->findvalue('@name', $node)->value();
 	    unshift @groups, $v   unless $v eq '';
 	}
-	$card_tags = join '::', @groups;
-	debug 'Group: ', $card_tags;
 
-	my $cardnodes = $xp->findnodes('Card[@name]', $groupnode);
-	foreach my $cardnode (@$cardnodes) {
-	    my (%c, $card_notes, @fieldlist);
-	    my $card_title = $xp->findvalue('@name', $cardnode)->value;
-	    debug "\tCard: ", $card_title;
+	my (%c, @fieldlist, %cmeta);
+	$cmeta{'title'} = $xp->findvalue('@name', $cardnode)->value;
+	$cmeta{'tags'} = join '::', @groups;
+	$cmeta{'folder'} = [ @groups];
+	debug "\tCard: ", $cmeta{'title'};
 
-	    my $iconnum = $xp->findvalue('@icon', $cardnode)->value;
-	    debug "\t\ticon # : ", $iconnum;
+	my $iconnum = $xp->findvalue('@icon', $cardnode)->value;
+	debug "\t\ticon # : ", $iconnum;
 
-	    if (my $fieldnodes = $xp->findnodes('Field', $cardnode)) {
-		my $fieldindex = 1;;
-		foreach my $fieldnode (@$fieldnodes) {
-		    # handle blank field labels;  type Note has none by default, but labels can be blanked by the user
-		    my $f = $fieldnode->getAttribute("name") || 'Field_' . $fieldindex;
-		    my $v = $fieldnode->string_value;
-		    debug "\t\tfield: $f -> $v";
-		    push @fieldlist, [ $f => $v ];			# maintain the field order, in case destination is notes
-		    $fieldindex++;
-		}
+	if (my $fieldnodes = $xp->findnodes('Field', $cardnode)) {
+	    my $fieldindex = 1;;
+	    foreach my $fieldnode (@$fieldnodes) {
+		# handle blank field labels;  type Note has none by default, but labels can be blanked by the user
+		my $f = $fieldnode->getAttribute("name") || 'Field_' . $fieldindex;
+		my $v = $fieldnode->string_value;
+		debug "\t\tfield: $f -> $v";
+		push @fieldlist, [ $f => $v ];			# maintain the field order, in case destination is notes
+		$fieldindex++;
 	    }
-
-	    my $notenodes = $xp->findnodes('Note', $cardnode);
-	    foreach my $notenode (@$notenodes) {
-		# XXX should be only one note entry
-		warn "Multiple notes entries(card '$card_title') - please report"	if defined $card_notes;
-		if ($notenode->string_value ne '') {
-		    $card_notes = $notenode->string_value;
-		    debug "\t\tnote: ", $card_notes;
-		}
-	    }
-
-	    my $itype = find_card_type(\@fieldlist, $iconnum);
-
-	    # skip all types not specifically included in a supplied import types list
-	    next if defined $imptypes and (! exists $imptypes->{$itype});
-
-	    # special case: set a credit cards 'type' from the icon number if possible
-	    if ($itype eq 'creditcard') {
-		push @fieldlist, [ type => $icons{$iconnum} ]		if exists $icons{$iconnum};
-	    }
-
-	    # From the card input, place it in the converter-normal format.
-	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, $card_tags, \$card_notes, \@groups, \&post_process_normalized);
-
-	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	    my $cardlist = explode_normalized($itype, $normalized);
-
-	    my @k = keys %$cardlist;
-	    if (@k > 1) {
-		$npre_explode++; $npost_explode += @k;
-		debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	    }
-	    for (@k) {
-		print_record($cardlist->{$_});
-		push @{$Cards{$_}}, $cardlist->{$_};
-	    }
-	    $n++;
 	}
+
+	my $notenodes = $xp->findnodes('Note', $cardnode);
+	foreach my $notenode (@$notenodes) {
+	    warn "Multiple notes entries(card '$cmeta{'title'}') - please report"	if exists $cmeta{'notes'};
+	    if ($notenode->string_value ne '') {
+		$cmeta{'notes'} = $notenode->string_value;
+		debug "\t\tnote: ", $cmeta{'notes'};
+	    }
+	}
+
+	my $itype = find_card_type(\@fieldlist, $iconnum);
+
+	# skip all types not specifically included in a supplied import types list
+	next if defined $imptypes and (! exists $imptypes->{$itype});
+
+	# Fixup: disambiguation
+	if ($itype eq 'carinfo' and (my @found = grep(ll('Expires') eq $_->[0], @fieldlist)) == 2) {
+	    $found[1][0] = 'Expires 2';
+	}
+
+	# Fixup: combine names
+	if ($itype =~ /^idcard|creditcard|passport$/) {
+	    my @found = grep { $_->[0] eq ll('First name') or $_->[0] eq ll('Last name') } @fieldlist;
+	    if (@found == 2) {
+		push @fieldlist, [ 'First + Last' =>  myjoin(' ',  $found[0][1], $found[1][1]) ];
+		debug "\t\tfield added: $fieldlist[-1][0] -> $fieldlist[-1][1]";
+	    }
+	}
+
+	# Fixup: credit card type - set a credit card's 'type' key from the icon number if possible
+	if ($itype eq 'creditcard') {
+	    push @fieldlist, [ 'Card Type' => $icons{$iconnum} ]		if exists $icons{$iconnum};
+	}
+
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
+
+	for (keys %$cardlist) {
+	    print_record($cardlist->{$_});
+	    push @{$Cards{$_}}, $cardlist->{$_};
+	}
+	$n++;
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('bankacct',     '_branchNumber',	$Utils::PIF::sn_branchInfo,	$Utils::PIF::k_string,    'branch number');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -241,13 +271,18 @@ sub find_card_type {
     my $type;
 
     for $type (sort by_test_order keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	    next unless $def->[1] and defined $def->[2];
+	my ($nfound, @found);
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
+	    next unless $cfs->[CFS_TYPEHINT] and defined $cfs->[CFS_MATCHSTR];
 	    for (@$fieldlist) {
-		# type hint
-		if ($_->[0] =~ $def->[2]) {
-		    debug "type detected as '$type' (key='$_->[0]')";
-		    return $type;
+		# type hint, requires matching the specified number of fields
+		if ($_->[0] eq ($cfs->[CFS_OPTS]{'i18n'} // $cfs->[CFS_MATCHSTR])) {
+		    $nfound++;
+		    push @found, $_->[0];
+		    if ($nfound == $cfs->[CFS_TYPEHINT]) {
+			debug sprintf "type detected as '%s' (%s: %s)", $type, pluralize('key', scalar @found), join('; ', @found);
+			return $type;
+		    }
 		}
 	    }
 	}
@@ -260,104 +295,10 @@ sub find_card_type {
 	return $icons{$iconnum};
     }
 
-    $type = grep($_->[0] eq 'Password', @$fieldlist) ? 'login' : 'note';
+    $type = grep($_->[0] eq ll('Password'), @$fieldlist) ? 'login' : 'note';
 
     debug "\t\ttype defaulting to '$type'";
     return $type;
-}
-
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $$notesref,
-	tags	=> $tags,
-	folder	=> $folder,
-    );
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if (!defined $def->[2] or $inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
-    }
-
-    $postprocess and ($postprocess)->($type, \%norm_cards);
-    return \%norm_cards;
-}
-
-# special fix up function for certain type fields
-sub post_process_normalized {
-    my ($type, $norm_cards) = @_;
-
-    sub join_firstlast {
-	my ($outkey, $type, $norm_cards) = @_;
-
-	my (@l, $first, $last);
-	$first = $l[0]	if @l = grep { '_firstname' eq $_->{'outkey'} } @{$norm_cards->{'fields'}};
-	$last  = $l[0]	if @l = grep { '_lastname'  eq $_->{'outkey'} } @{$norm_cards->{'fields'}};
-	if ($first or $last) {
-	    my %h = (
-		inkey	  => myjoin(' + ', $first->{'inkey'}, $last->{'inkey'}),
-		valueorig => 'N/A',
-		value	  => myjoin(' ',   $first->{'value'}, $last->{'value'}),
-		outkey	  => $outkey,
-		outtype	  => $type,
-		keep	  => 0,
-	    );
-
-	    push @{$norm_cards->{'fields'}}, \%h;
-	}
-    }
-
-    if ($type eq 'creditcard') {
-	join_firstlast('cardholder', $type, $norm_cards);
-    }
-    elsif ($type eq 'membership') {
-	join_firstlast('member_name', $type, $norm_cards);
-    }
-    elsif ($type eq 'passport') {
-	join_firstlast('fullname', $type, $norm_cards);
-    }
 }
 
 # sort logins as the last to check
@@ -410,7 +351,46 @@ sub date2monthYear {
 
 sub date2epoch {
     my ($y, $m, $d) = parse_date_string @_;
-    return defined $y ? timelocal(0, 0, 0, $d, $m - 1, $y): $_[0];
+    return defined $y ? timelocal(0, 0, 3, $d, $m - 1, $y): $_[0];
+}
+
+# String localization.  mSecure has localized card types and field names, so these must be mapped
+# to the localized versions in the Localizable.strings file for a given language.
+# The %localized table will be initialized using the localized name as the key, and the english version
+# as the value.
+#
+sub init_localization_table {
+    my $lang = shift;
+    main::Usage(1, "Unknown language type: '$lang'")
+	unless defined $lang and $lang =~ /^(nl-nl)$/;
+
+    if ($lang) {
+	my $lstrings_path = join '.', File::Spec->catfile('Languages', 'handysafe'), $lang, 'txt';
+
+	local $/ = "\n";
+	#open my $lfh, "<:encoding(utf16)", $lstrings_path
+	open my $lfh, "<", $lstrings_path
+	    or bail "Unable to open localization strings file: $lstrings_path\n$!";
+	while (<$lfh>) {
+	    chomp;
+	    my ($key, $val) = split /" = "/;
+	    $key =~ s/^"//;
+	    $val =~ s/"$//;
+	    #say "Key: $key, Val: $val";
+	    if ($val =~ s#^/(.+)/$#$1#) {
+		$val = qr/$val/;
+	    }
+	    $localized{$key} = $val;
+	}
+    }
+    1;
+}
+
+# Lookup the localized string and return its english string value.
+sub ll {
+    local $_ = shift;
+
+    return $localized{$_} // $_;
 }
 
 1;

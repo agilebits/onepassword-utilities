@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Ewallet 1.01;
+package Converters::Ewallet 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,23 +18,13 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Time::Local qw(timelocal);
 use Date::Calc qw(check_date Date_to_Days Moving_Window);
 
-# The %card_field_specs hash maps input card types to 1P4 card types and their assosciated fields. 
-#
-#   KEY   =>                    { textname => 'Card Text Name', fields => [
-#       [ 1p4_Field_Key,     SetType?, field label match pattern, value_mod_callback, retain_key? ]
-#
-# Do Not Reorder the fields within a type - they match the order found in the text output and help parsing
-#
-#    dstkey =>			1, RE or str, {
-#						func	 => <callback func ref>
-#						type_out => <exptype>
-#						keep	 => 0|1
-#						to_title => normalized card field key
-#					      }
+my $sOther = 'other.Other Information';
 
 my %card_field_specs = (
     bankacct =>                 { textname => undef, fields => [
@@ -43,19 +33,19 @@ my %card_field_specs = (
 	[ 'accountType',	0, qr/^(Account Type) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => \&bankstrconv } ],
 	[ 'accountNo',		0, qr/^(Account Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'telephonePin',	0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ '_sortcode',		1, qr/^(Sort Code) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ '_sortcode',		1, qr/^(Sort Code) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'sort code' ] } ],
 	[ 'swift',		1, qr/^(SWIFT Code) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'routingNo',		1, qr/^(ABA\/Routing(?: #)?) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.3mac: " #", but not 7.64win
-	[ '_pin2',		1, qr/^(PIN2) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		 { type_out => 'login' } ],
-	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	 { type_out => 'login' } ],
-	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		 { type_out => 'login' } ],
+	[ '_pin2',		1, qr/^(PIN2) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin2','generate'=>'off' ] } ],
+	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
+	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ type_out => 'login' } ],
+	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
     ]},
     callingcard =>              { textname => undef, type_out => 'login', fields => [
-	[ '_provider',		1, qr/^(Provider) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ '_accessnum',		0, qr/^(Access Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
-	[ '_cardnum',		0, qr/^(Card Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
-	[ '_pin',		0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ '_provider',		1, qr/^(Provider) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $sOther, $Utils::PIF::k_string, 'provider' ] } ],
+	[ '_accessnum',		0, qr/^(Access Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $sOther, $Utils::PIF::k_string, 'access number' ] } ], # 7.64win no :
+	[ '_cardnum',		0, qr/^(Card Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $sOther, $Utils::PIF::k_string, 'card number' ] } ], # 7.64win no :
+	[ '_callcardpin',	0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $sOther, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
 	[ 'notesinst',		1, qr/^(Notes and Instructions) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'phonenum',		0, qr/^(?|(Phone Number)|(?:(If card is lost or stolen call):)) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win: Phone Number
 	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
@@ -67,13 +57,13 @@ my %card_field_specs = (
 	[ 'carmake',		1, qr/^(Make) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'carmodel',		0, qr/^(Model) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'carlicense',		0, qr/^(License Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
-	[ 'carlicenseexpiry',	0, qr/^(Expires on):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
+	[ 'carlicenseexpires',	0, qr/^(Expires on):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'carvin',		1, qr/^(Vehicle Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'carcylinders',	1, qr/^(Cylinders):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
-	[ 'carinscompany',	1, qr/^(Insurance Company):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
+	[ 'carinscompany',	0, qr/^(Insurance Company):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'carinspolicy',	0, qr/^(Policy Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'carinsphone',	1, qr/^(Insurance Telephone) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'carinsexpiry',	0, qr/^(Expires on):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, note Expires on above also
+	[ 'carinsexpiry',	0, qr/^(Insurance Expires):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, see disambiguate_fields()
 	[ 'carinsphone2',	0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ type_out => 'login' } ],
@@ -82,10 +72,10 @@ my %card_field_specs = (
     cellphone =>                { textname => undef, type_out => 'login', fields => [
 	[ 'cellmfg',		0, qr/^(Manufacturer) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'cellmodel',		0, qr/^(Model) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'cellphonenum',	0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ '_pin',		0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'cellpassword',	0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'cellseccode',	1, qr/^(Security Code) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'cellphonenum',	0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $sOther, $Utils::PIF::k_string, 'phone number' ] } ],
+	[ '_cellpin',		0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $sOther, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
+	[ 'cellpassword',	0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $sOther, $Utils::PIF::k_concealed, 'cell password', 'generate'=>'off' ] } ],
+	[ 'cellseccode',	1, qr/^(Security Code) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $sOther, $Utils::PIF::k_concealed, 'security code', 'generate'=>'off' ] } ],
 	[ 'phonehelp',		1, qr/^(Help Phone Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'cellsim',		1, qr/^(SIM) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'cellemei',		1, qr/^(IMEI\/ESN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
@@ -106,7 +96,7 @@ my %card_field_specs = (
 	[ 'clothesglove',	1, qr/^(Glove):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'clothesother',	0, qr/^(Other) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
-    combolock =>                { textname => undef, type_out => 'login', fields => [
+    combolock =>                { textname => undef, type_out => 'password', fields => [
 	[ 'combolock',		1, qr/^(Lock):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'combolocation',	0, qr/^(Location):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'password',		1, qr/^(Combination) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
@@ -124,11 +114,11 @@ my %card_field_specs = (
     ]},
     contactlens =>              { textname => undef, type_out => 'note', fields => [
 	[ 'clensrpow',		1, qr/^(Right (?:\(O\.D\.\) )?Power):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, adds "(O.D.) "
-	[ 'clensrbasecurve',	1, qr/^((?:Right )?Base Curve):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, adds "Right "
-	[ 'clensrdiameter',	1, qr/^((?:Right )?Diameter):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Right "
+	[ 'clensrbasecurve',    1, qr/^(Right Base Curve):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],        	# 7.64win no :, adds "Right ", see disambiguate_fields()
+	[ 'clensrdiameter',     1, qr/^(Right Diameter):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],          	# 7.64win no :, adds "Right ", see disambiguate_fields()
 	[ 'clenslpow',		1, qr/^(Left (?:\(O\.S\.\) )?Power):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, adds "(O.S.) "
-	[ 'clenslbasecurve',	1, qr/^((?:Left )?Base Curve):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Left "; "Base Curve" exists above
-	[ 'clensldiameter',	1, qr/^((?:Left )?Diameter):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Left "; "Diameter" exists above
+	[ 'clenslbasecurve',    1, qr/^(Left Base Curve):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],         	# 7.64win no :, adds "Left "; "Base Curve" exists above
+	[ 'clensldiameter',     1, qr/^(Left Diameter):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],           	# 7.64win no :, adds "Left "; "Diameter" exists above
 	[ 'clensdoc',		0, qr/^(Doctor's Name):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'clensdocphone',	0, qr/^(Doctor's Phone)(?: #:)? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no "# :"
 	[ 'clensother',		0, qr/^(Other Information) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
@@ -139,10 +129,10 @@ my %card_field_specs = (
 	[ 'clensstore',		0, qr/^(Store) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'clenscost',		0, qr/^(Cost) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'clensradd',		0, qr/^(Right Add) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'clensrbase',		0, qr/^(Right Base) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'clensrbase',		0, qr/^(Right Base(?! Curve)) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'clensrprism',	0, qr/^(Right Prism) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'clensladd',		0, qr/^(Left Add) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'clenslbase',		0, qr/^(Left Base) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'clenslbase',		0, qr/^(Left Base(?! Curve)) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'clenslprism',	0, qr/^(Left Prism) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
     creditcard =>               { textname => undef, fields => [
@@ -179,11 +169,11 @@ my %card_field_specs = (
 	[ 'pop_server',		1, qr/^(Incoming (?:POP|Pop) Server):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no : and "POP"
 	[ '_phoneaccess',	0, qr/^(Access Phone Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'provider_website',	0, qr/^(Support URL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
-	[ '_phonesupport',	0, qr/^(Support Phone (?:Number )):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no : and "Number "
+	[ '_phonesupport',	1, qr/^(Support Phone(?: Number)?):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no : and "Number "
     ]},
     emergency =>                { textname => undef, type_out => 'note', fields => [
 	[ 'emergencynums',	0, qr/^(Title|Emergency Numbers) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win "Title"
-	[ 'emergencyfire',	1, qr/^(Fire): ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
+	[ 'emergencyfire',	1, qr/^(Fire):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
 	[ 'emergencyambulance',	1, qr/^(Ambulance):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'emergencypolice',	1, qr/^(Police):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'emergencydoctor',	0, qr/^(Doctor):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
@@ -203,11 +193,11 @@ my %card_field_specs = (
     ]},
     health =>                   { textname => undef, type_out => 'membership', fields => [
 	[ 'healthtitle',	0, qr/^(Card Title) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'healthid',		0, qr/^(ID Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
+	[ 'healthid',		0, qr/^(ID Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'ID number' ] } ], # 7.64win no :
 	[ 'org_name',		0, qr/^(Group):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
-	[ 'healthplan',		1, qr/^(Plan):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
+	[ 'healthplan',		1, qr/^(Plan(?! Sponsor)):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms, {custfield =>[ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'plan'] } ],	# 7.64win no :
 	[ 'healthphone',	0, qr/^(Telephone):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
-	[ 'healthspon',		1, qr/^(Plan Sponsor):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
+	[ 'healthspon',		1, qr/^(Plan Sponsor):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'plan sponsor' ] } ], # 7.64win no :
 	[ 'healthother',	0, qr/^(Other) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ type_out => 'login' } ],
@@ -219,19 +209,19 @@ my %card_field_specs = (
 	[ 'membership_no',	0, qr/^(ID Number)(?!:) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# note no :
 	[ 'member_name',	0, qr/^(Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'website',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'idusername',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'idusername',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'user name' ] } ],
 	[ 'pin',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'phone',		0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
     insurance =>                { textname => undef, type_out => 'membership', fields => [
-	[ 'insureco',		0, qr/^(Insurance Company) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'insurepol',		0, qr/^(Policy Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
-	[ 'insuretype',		0, qr/^((?:Insurance )?Type): ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no "Insurance "
+	[ 'insureco',		0, qr/^(Insurance Company) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'insurance company' ] } ],
+	[ 'insurepol',		0, qr/^(Policy Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'policy number' ] } ], # 7.64win no :
+	[ 'insuretype',		0, qr/^((?:Insurance )?Type):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'insurance type' ] } ], # 7.64win no "Insurance "
 				# 7.64win: "Expiration Date", 7.3mac: "Expires On: "
 	[ 'expiry_date',	0, qr/^(Expir(?:es On|ation Date)):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms, { func => sub { return date2monthYear($_[0], 2) }, keep => 1 } ],
 	[ 'phone',		0, qr/^((?:Phone|Telephone) Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win "Phone Number"
 	[ 'insureother',	0, qr/^(Other Information) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'insureagent',	1, qr/^(Agent) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'insureagent',	1, qr/^(Agent) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'agent' ] } ],
 	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ type_out => 'login' } ],
 	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
@@ -253,11 +243,11 @@ my %card_field_specs = (
     ]},
     lens =>              	{ textname => undef, type_out => 'note', fields => [
 	[ 'lensrsph',		1, qr/^(Right (?:\(O\.D\.\) )?SPH):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, adds "(O.D.) "
-	[ 'lensrcyl',		1, qr/^((?:Right )?CYL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Right "
-	[ 'lensraxis',		1, qr/^((?:Right )?AXIS):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Right "
+	[ 'lensrcyl',           1, qr/^(Right CYL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],               	# 7.64win no :, adds "Right ", see disambiguate_fields()
+	[ 'lensraxis',          1, qr/^(Right AXIS):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],              	# 7.64win no :, adds "Right ", see disambiguate_fields()
 	[ 'lenslsph',		1, qr/^(Left (?:\(O\.S\.\) )?SPH):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, adds "(O.S.) "
-	[ 'lenslcyl',		1, qr/^((?:Left )?CYL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Left "
-	[ 'lenslaxis',		1, qr/^((?:Left )?AXIS):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, adds "Left "
+	[ 'lenslcyl',		1, qr/^(Left CYL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :, adds "Left ", see disambiguate_fields()
+	[ 'lenslaxis',		1, qr/^(Left AXIS):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :, adds "Left ", see disambiguate_fields()
 	[ 'lenspupil',		1, qr/^(Pupil Distance \(mm\)):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'lensdoc',		0, qr/^(Doctor's Name):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'lensdoc',		0, qr/^(Doctor's Phone) (?:#: )?([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no "#:"
@@ -321,17 +311,19 @@ my %card_field_specs = (
 	[ 'username',		0, qr/^(User Name):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'url',		0, qr/^(URL):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
-	[ '_pin',		0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ '_pin',		0, qr/^(PIN) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ custfield => [ $sOther, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
 	[ 'pwtype',		0, qr/^(Account Type) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'pwphone',		0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    ]},
+    picturecard =>              { textname => undef, type_out => 'note', fields => [
     ]},
     prescription =>           	{ textname => undef, type_out => 'note', fields => [
 	[ 'rxdrug',		1, qr/^(Drug Name):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'rxamount',		1, qr/^(Amount):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'rxwhen',		1, qr/^(When to Take):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'rxbrand',		0, qr/^(Brand):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
-	[ 'rxdate',		0, qr/^((?:Purchase )?Date):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, "Purchase Date"
-	[ 'rxpharmacy',		1, qr/^(Pharmacy):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
+	[ 'rxdate',		0, qr/^((?:Purchase )?Date(?! Started| Stopped)):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :, "Purchase Date"
+	[ 'rxpharmacy',		1, qr/^(Pharmacy(?! Phone Number)):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :
 	[ 'rxdoctor',		0, qr/^(Doctor):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'rxdocphone',		0, qr/^(Doctor's Phone|Phone No\.):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, "Doctor's Phone"
 	[ 'rxphone',		1, qr/^(Pharmacy Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
@@ -387,7 +379,7 @@ my %card_field_specs = (
 	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ '_phonenum',		0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
-    voicemail =>           	{ textname => undef, type_out => 'login', fields => [
+    voicemail =>           	{ textname => undef, type_out => 'password', fields => [
 	[ 'vmaccessnum',	0, qr/^((?:Voice Mail )?Access Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, "Access Number"
 	[ 'password',		0, qr/^(Password):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'vmplay',		1, qr/^(Play):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
@@ -440,29 +432,17 @@ sub do_import {
     my ($file, $imptypes) = @_;
     my %Cards;
 
-=cut
-    use open qw(:std :utf8);
-    $/ = undef;
-    $_ = <>;
-=cut
-    {
-	local $/;
-	open my $fh, '<:encoding(utf8)', $file or bail "Unable to open file: $file\n$!";
-	$_   = <$fh>;
-	close $fh;
-    }
+    $_ = slurp_file($file, 'utf8');
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
     while (s/\A(Category: .+?)\x{0a}{2}((?:Category: .+$)|\Z)/$2/ms) {
 	my $cards = $1;
-	my ($card_tags, $card_folder);
+	my $category;
 
 	# Although categories can be nested in eWallet, there is no way to detect category hierarchy in the text export file.
 	if ($cards =~ s/^Category: (.+?)(\x{0a}{2})/$2/ms) {
-	    $card_tags = $1;
-	    $card_folder = $1;
-	    debug 'Category: ', $card_tags;
+	    $category = $1;
+	    debug 'Category: ', $category;
 	}
 	else {
 	    # Another category immediately follows
@@ -483,11 +463,13 @@ sub do_import {
 	# Process each card
 	while ($cards =~ s/\A\x{0a}{2}Card (.*?)(\x{0a}{2}Card|\Z)/$2/ms) {
 	    my ($cardstr, $orig) = ($1, $1);
-	    my ($card_title);
+	    my %cmeta;
+	    $cmeta{'tags'} = $category;
+	    $cmeta{'folder'} = [ $category ];
 
 	    if ($cardstr =~ s/^([^\x{0a}]+)(?:\x{0a}|\Z)//ms) {			# card name
 		debug "------  Card name: ", $1;
-		$card_title = $1;
+		$cmeta{'title'} = $1;
 	    }
 	    else {
 		bail "Card name is missing in card entry\n", $orig;
@@ -500,17 +482,48 @@ sub do_import {
 
 	    # From the card input, place it in the converter-normal format.
 	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \$cardstr, $card_title, $card_tags, \@saved_notes, $card_folder);
 
-	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
+	    my $normalized;
+	    if ($itype eq 'note' and $cardstr !~ /__CARDNOTES__/) {
+		$cmeta{'notes'} = $cardstr;
+		$cardstr = '';
+		$normalized = \%cmeta
+	    }
+	    else {
+		disambiguate_fields($itype, \$cardstr);
+		my @fieldlist;
+	        for my $cfs (@{$card_field_specs{$itype}{'fields'}}) {
+		    if ($cardstr =~ s/($cfs->[CFS_MATCHSTR])//ms) {
+			next if not defined $3 or $3 eq '';
+			push @fieldlist, $1;
+		    }
+		}
+
+		# notes field: tags, all unmapped fields, and card notes
+		if ($cardstr =~ s/^__CARDNOTES__(\d+)(?:\x{0a}|\Z)//ms) {		# the original card's notes
+		    my $note_index = $1 - 1;
+		    if (@saved_notes) {
+			local $_ = $saved_notes[$note_index];
+			s/\R+/\x{0a}/g;
+			s/\n+$//;
+			debug "\t\tNotes: ", $_;
+			$cmeta{'notes'} = $_;
+		    }
+		}
+
+		if ($cardstr ne '') {						# add unmatched stuff to the end of notes
+		    debug "\t\tUNMAPPED FIELDS: '$cardstr'";
+		    defined $cmeta{'notes'} and $cmeta{'notes'} .= "\n";
+		    $cmeta{'notes'} .= $cardstr;
+		    $cardstr = '';
+		}
+
+		$normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	    }
+
 	    my $cardlist = explode_normalized($itype, $normalized);
 
-	    my @k = keys %$cardlist;
-	    if (@k > 1) {
-		$npre_explode++; $npost_explode += @k;
-		debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	    }
-	    for (@k) {
+	    for (keys %$cardlist) {
 		print_record($cardlist->{$_});
 		push @{$Cards{$_}}, $cardlist->{$_};
 	    }
@@ -518,31 +531,12 @@ sub do_import {
 	}
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('bankacct',     '_sortcode',    $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'sort code');
-    add_new_field('bankacct',     '_pin2',        $Utils::PIF::sn_main,     $Utils::PIF::k_concealed, 'pin2',		'generate'=>'off');
-    add_new_field('membership',   'healthid',     $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'ID number');
-    add_new_field('membership',   'healthspon',   $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'plan sponsor');
-    add_new_field('membership',   'healthplan',   $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'plan');
-    add_new_field('membership',   'idusername',   $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'user name');
-    add_new_field('membership',   'insureco',     $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'insurance company');
-    add_new_field('membership',   'insurepol',    $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'policy number');
-    add_new_field('membership',   'insuretype',   $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'insurance type');
-    add_new_field('membership',   'insureagent',  $Utils::PIF::sn_main,     $Utils::PIF::k_string,    'agent');
-    add_new_field('login',        'cellphonenum', 'other.Other Information',$Utils::PIF::k_string,    'phone number');
-    add_new_field('login',        '_pin',	  'other.Other Information',$Utils::PIF::k_concealed, 'pin',		'generate'=>'off');
-    add_new_field('login',        '_provider',	  'other.Other Information',$Utils::PIF::k_string,    'provider');
-    add_new_field('login',        '_accessnum',	  'other.Other Information',$Utils::PIF::k_string,    'access number');
-    add_new_field('login',        '_cardnum',	  'other.Other Information',$Utils::PIF::k_string,    'card number');
-    add_new_field('login',        'cellpassword', 'other.Other Information',$Utils::PIF::k_concealed, 'cell password',	'generate'=>'off');
-    add_new_field('login',        'cellseccode',  'other.Other Information',$Utils::PIF::k_concealed, 'security code',	'generate'=>'off');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -551,10 +545,9 @@ sub find_card_type {
     my $type;
 
     for $type (sort by_test_order keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	    if (defined $def->[2] and $c =~ /$def->[2]/ms) {
-		# type hint
-		if ($def->[1]) {
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
+	    if (defined $cfs->[CFS_MATCHSTR] and $c =~ /$cfs->[CFS_MATCHSTR]/ms) {
+		if ($cfs->[CFS_TYPEHINT]) {
 		    debug "\t\ttype detected as '$type'";
 		    return $type;
 		}
@@ -573,75 +566,6 @@ sub find_card_type {
     return $type;
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $cardstr, $title, $tags, $saved_notes, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	tags	=> $tags,
-	folder	=> [$folder],
-    );
-
-    if ($type eq 'note' and $$cardstr !~ /__CARDNOTES__/) {
-	$norm_cards{'notes'} = $$cardstr;
-	$$cardstr = '';
-	goto OUT;
-    }
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	if ($$cardstr =~ s/$def->[2]//ms) {
-	    next if not defined $2 or $2 eq '';
-	    my ($inkey, $value) = ($1, $2);
-	    my $origvalue = $value;
-
-	    if (exists $def->[3] and exists $def->[3]{'func'}) {
-		#         callback(value, outkey)
-		my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		$value = $ret	if defined $ret;
-	    }
-	    $h->{'inkey'}	= $inkey;
-	    $h->{'value'}	= $value;
-	    $h->{'valueorig'}	= $origvalue;
-	    $h->{'outkey'}	= $def->[0];
-	    $h->{'outtype'}	= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-	    $h->{'keep'}	= $def->[3]{'keep'} // 0;
-	    $h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-	    push @{$norm_cards{'fields'}}, $h;
-	}
-    }
-
-    # notes field: tags, all unmapped fields, and card notes
-    if ($$cardstr =~ s/^__CARDNOTES__(\d+)(?:\x{0a}|\Z)//ms) {		# the original card's notes
-	my $note_index = $1 - 1;
-	if (@$saved_notes) {
-	    local $_ = $saved_notes->[$note_index];
-	    s/\R+/\x{0a}/g;
-	    s/\n+$//;
-	    debug "\t\tNotes: ", $_;
-	    $norm_cards{'notes'} = $_;
-	}
-    }
-
-    if ($$cardstr ne '') {						# add unmatched stuff to the end of notes
-	debug "\t\tUNMAPPED FIELDS: '$$cardstr'";
-	defined $norm_cards{'notes'} and $norm_cards{'notes'} .= "\n";
-	$norm_cards{'notes'} .= $$cardstr;
-	$$cardstr = '';
-    }
-
-OUT:
-    return \%norm_cards;
-}
-
 # sort logins as the last to check
 sub by_test_order {
     return  1 if $a eq 'password';
@@ -649,6 +573,28 @@ sub by_test_order {
     return  1 if $a eq 'website';
     return -1 if $b eq 'website';
     $a cmp $b;
+}
+
+# The field labels in a record can be duplicated.  To make the %card_field_specs table unambiguous,
+# context is used to relabel the duplicate label names.
+sub disambiguate_fields {
+    my ($type, $cardstr) = @_;
+
+    if ($type eq 'carinfo') {
+	$$cardstr =~ s/^Insurance.+\K^Expires on/Insurance Expires/ms;		# Expires on
+    }
+    elsif ($type eq 'contactlens') {
+	$$cardstr =~ s/^Base Curve.+\K^Base Curve/Left Base Curve/ms;		# Base Curve
+	$$cardstr =~ s/^Base Curve/Right Base Curve/ms;				# Base Curve
+	$$cardstr =~ s/^Diameter.+\K^Diameter/Left Diameter/ms;			# Diameter
+	$$cardstr =~ s/^Diameter/Right Diameter/ms;				# Diameter
+    }
+    elsif ($type eq 'lens') {
+	$$cardstr =~ s/^CYL.+\K^CYL/Left CYL/ms;				# CYL
+	$$cardstr =~ s/^CYL/Right CYL/ms;					# CYL
+	$$cardstr =~ s/^AXIS.+\K^AXIS/Left AXIS/ms;				# AXIS
+	$$cardstr =~ s/^AXIS/Right AXIS/ms;					# AXIS
+    }
 }
 
 sub bankstrconv {
@@ -676,8 +622,8 @@ sub parse_date_string {
 
 	my $m = sprintf "%02d", $+{'m'};
 	my $d = sprintf "%02d", $+{'d'} // "1";
-	my $y = $+{'y'};
 	for my $century (qw/20 19/) {
+	    my $y = $+{'y'};
 	    if (length $y eq 2) {
 		$y = sprintf "%d%02d", $century, $y;
 		$y = Moving_Window($y)	if $when == 2;
@@ -700,7 +646,7 @@ sub date2monthYear {
 
 sub date2epoch {
     my ($y, $m, $d) = parse_date_string @_;
-    return defined $y ? timelocal(0, 0, 0, $d, $m - 1, $y): $_[0];
+    return defined $y ? timelocal(0, 0, 3, $d, $m - 1, $y): $_[0];
 }
 
 1;

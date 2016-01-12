@@ -13,12 +13,12 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(debug_on verbose_on verbose debug pluralize myjoin flow);
+use Utils::Utils;
 use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.07";
+my $version = "1.08";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -43,7 +43,7 @@ eval {
     Usage(1, "Error: failed to load converter module '$module_name'\n$error");
 };
 
-my $converter = $module->do_init();
+our $converter = $module->do_init();
 
 my (%supported_types, %supported_types_str);
 for (keys %{$converter->{'specs'}}) {
@@ -65,6 +65,8 @@ our %opts = (
 ); 
 
 my @opt_config = (
+    [ q{-a or --addfields          # add non-stock fields as custom fields },
+       'addfields|a' ],
     [ q{-d or --debug              # enable debug output},
 	'debug|d'	=> sub { debug_on() } ],
     [ q{-e or --exptypes <list>    # comma separated list of one or more export types from list below},
@@ -77,6 +79,8 @@ my @opt_config = (
 	'imptypes|i=s' ],
     [ q{-o or --outfile <ofile>    # use file named ofile.1pif as the output file},
 	'outfile|o=s' ],
+    [ q{-t or --tags               # add one or more comma-separated tags to the record},
+       'tags|t=s' ],
     [ q{-v or --verbose            # output operations more verbosely},
 	'verbose|v'	=> sub { verbose_on() } ],
     [ q{      --nowatchtower       # do not set creation date for logins to trigger Watchtower checks},
@@ -94,7 +98,7 @@ $show_full_usage_msg = 1;
 	or Usage(1);
 }
 debug "Command Line: @save_ARGV";
-@ARGV == 1 or Usage(1, "Missing export_text_file name - please specify the file to convert");
+@ARGV >= 1 or Usage(1, "Missing export_text_file name - please specify the file to convert");
 
 $opts{'outfile'} .= ".1pif"	if not $opts{'outfile'} =~ /\.1pif$/i;
 debug "Output file: ", $opts{'outfile'};
@@ -112,8 +116,11 @@ for my $impexp (qw/imp exp/) {
     }
 }
 
+# debugging aid
+print_fileinfo($ARGV[0])	if debug_enabled();
+
 # import the wallet export data, and export the converted data
-do_export( do_import($ARGV[0], $opts{imptypes} // undef), $opts{'outfile'}, $opts{'exptypes'} // undef);
+do_export( do_import(@ARGV > 1 ? \@ARGV : $ARGV[0], $opts{imptypes} // undef), $opts{'outfile'}, $opts{'exptypes'} // undef);
 
 ### end - functions below
 
@@ -123,10 +130,11 @@ sub Usage {
     local $,="\n";
     say @_;
     say "Usage: $progstr <converter> <options> <export_text_file>\n";
-    say 'converters:',  map(' ' x 4 . $_, flow(\@converters, 90));
+    say 'Select a converter:',  map(' ' x 4 . $_, flow(\@converters, 90));
 
     if (! $show_full_usage_msg) {
-	say "\nspecify one of the converters above on the command line to see complete options";
+	say "\nSelect one of the converters above and add it to the command line to see more\ncomplete options.  Example:";
+	say "\n\tperl convert_to_1p4.pl ewallet --help\n";
 	exit $exitcode;
     }
 

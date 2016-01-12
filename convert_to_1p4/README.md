@@ -2,7 +2,7 @@
 
 The **convert_to_1p4** utility converts exported data from various password management programs into a format that can be imported by 1Password, or in the case of 1Password data, suitable for printing.  The table below lists the currently supported password management programs, along with the converter's name, and the purpose of the converter.
 
-## Supported Converters
+## Available Converters
 
 Password Manager | Converter Name | Purpose | Minimal Version or Version Tested
 :-------|:-------|:-------|:-------
@@ -13,10 +13,12 @@ Data Guardian | dataguardian | importing | OS X: 3.2; Windows: 3.2
 DataVault | datavault | importing | OS X: 5.2.39; Windows: 5.1.32
 EssentialPIM | essentialpim | importing | Windows: 6.04
 eWallet | ewallet | importing | OS X: 7.3; Windows: 7.6.4
+F-Secure KEY | fsecurekey | importing | OS X: 4.0.108; Windows: 4.0.109
 Handy Safe | handysafe | importing | OS X: 1.02; Windows: Handy Safe Desktop Professional 3.01
 IronKey Identity Manager | ironkeyim | importing | Windows: firmware 4.0.5, software 3.4.3.2 (export to XML is available in software 2.5.1.0 onward)
 Keepass 2 | keepass2 | importing | Windows: 2.26
-KeepassX | keepassx | importing | OS X: .0.4.3 (version 2.0 alpha does not support exporting - use KeePass 2.x to read a KeePassX 2.0 database and export it as XML)
+KeePassX | keepassx | importing | OS X: .0.4.3 (see note in KeePassX section 3 below)
+Keeper Desktop | keeper | importing |OS X: 8.3.3; Windows: 8.3.3
 Keychain, OS X | keychain | importing | OS X 10.9.5, 10.10
 LastPass | lastpass | importing | Browser-dependent extension; various versions exist (version 3.1.54 Firefox/Windows tested)
 LicenseKeeper | licensekeeper | importing |  OS X: 1.8.4 (1702)
@@ -25,12 +27,15 @@ Norton Identity Safe | nortonis | importing | Windows: tested with 2014.7.11.42;
 Passpack | passpack | importing | Web version 7.7.14 tested on OS X and Windows
 Password Agent | passwordagent | importing | Windows: 2.6.3
 Password Depot | passworddepot | importing | Windows: 8.1.1
+Passwords Plus | passwordsplus | importing | OS X: 3.0020
 PasswordWallet | passwordwallet | importing | OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
+RoboForm | roboform | importing | OS X 1.95; Windows 6.9.99, 7.x (see note in RoboForm section 3 below)
 Safe in Cloud | safeincloud | importing | OS X: 1.6; Windows: 2.8
 SafeWallet | safewallet | importing | OS X 1.2; Windows: 2.4.1.2, 3.0.7
 SPB Wallet | spbwallet | importing | Windows: 2.1.2 (12118)
 SplashID | splashid | importing | OS X: 7.2.2; Windows: 7.2.4
-vCard, OS X Contacts | vcard | importing | OS X: 10.10.3 tested, vCard version 3.0
+vCard (OS X & iCloud Contacts) | vcard | importing | OS X: 10.10.3 tested, vCard version 3.0
+Text files to notes | txt2notes | importing | OS X; Windows
 
 ## Instructions
 
@@ -55,9 +60,9 @@ The converter requires that both the export from your password manager and the c
 
 The converter (witten in the Perl scripting language) runs in a command shell using either the OS X **Terminal** application or the Windows command shell **cmd.exe**.
 
-On OS X, an AppleScript is available which simplifies converting your exported data via drag-and-drop, eliminated several steps below.
+On OS X, an AppleScript is available which simplifies converting your exported data, eliminating several steps below.
 
-On Windows, a Perl interpreter is required, and you will need the free [Strawberry Perl](http://strawberryperl.com/releases.html), version 5.16.3.1 (*not* 5.18 or later).  Download the  **portable** version of Strawberry Perl, selecting the appropriate  [32-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.16.3.1/strawberry-perl-5.16.3.1-64bit-portable.zip) version.  When you are done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 3 below.
+On Windows, a Perl interpreter is required, and you will need the free [Strawberry Perl](http://strawberryperl.com/releases.html).  Download the latest **portable** version of Strawberry Perl, selecting the appropriate  [32-bit](http://strawberryperl.com/download/5.20.3.1/strawberry-perl-5.20.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.20.3.1/strawberry-perl-5.20.3.1-64bit-portable.zip) version.  When you are done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 3 below.
 
 ### 2. Export Your Data
 
@@ -111,13 +116,16 @@ outputs:
 ```
 Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
-converters:
-    clipperz dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
+Select a converter:
+    clipperz csv dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
     keepassx keychain lastpass licensekeeper msecure nortonis onepif2html passpack
     passwordagent passworddepot passwordwallet safeincloud safewallet spbwallet splashid
-    vcard
+    txt2notes vcard
 
-specify one of the converters above on the command line to see complete options
+Select one of the converters above and add it to the command line to see more
+complete options.  Example:
+
+	perl convert_to_1p4.pl ewallet --help
 ```
 
 Now, let's enter the command that performs the conversion.  In the Terminal window (OS X) or the command window (Windows), enter the appropriate command below for your OS version, replacing *name_of_converter* with the relevant converter name for your password manager, and replacing *name_of_export_file* with the name of your password manager's export file:
@@ -178,38 +186,41 @@ More specific help is also available when you've specified a converter on the co
 would result in the output:
 
 ```
-$ perl convert_to_1p4.pl ewallet --help
-
 Usage: convert_to_1p4.pl <converter> <options> <export_text_file>
 
-converters:
-    clipperz dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
+Select a converter:
+    clipperz csv dataguardian datavault essentialpim ewallet handysafe ironkeyim keepass2
     keepassx keychain lastpass licensekeeper msecure nortonis onepif2html passpack
     passwordagent passworddepot passwordwallet safeincloud safewallet spbwallet splashid
-    vcard
+    txt2notes vcard
 
 options:
+    -a or --addfields          # add non-stock fields as custom fields
     -d or --debug              # enable debug output
     -e or --exptypes <list>    # comma separated list of one or more export types from list below
     -f or --folders            # create and assign items to folders
     -h or --help               # output help and usage text
     -i or --imptypes <list>    # comma separated list of one or more import types from list below
     -o or --outfile <ofile>    # use file named ofile.1pif as the output file
+    -t or --tags               # add one or more comma-separated tags to the record
     -v or --verbose            # output operations more verbosely
           --nowatchtower       # do not set creation date for logins to trigger Watchtower checks
 
 supported import types:
     bankacct callingcard carinfo cellphone clothes combolock contact contactlens creditcard
     driverslicense email emergency general health idcard insurance internet lens librarycard
-    membership note passport password prescription serialnum socialsecurity software
-    voicemail votercard website
+    membership note passport password picturecard prescription serialnum socialsecurity
+    software voicemail votercard website
 supported export types:
-    bankacct creditcard driverslicense email login membership note passport server
+    bankacct creditcard driverslicense email login membership note passport password server
     socialsecurity software
-
 ```
 
 ---
+
+#### Options: `--addfields`
+By default, password manager fields that do not naturally map into 1Password fields are placed into an entry's notes section as key:value pairs.  The `--addfields` option will instead generate custom fields, and place them in a section named **Original Fields**.
+
 
 #### Options: `--imptypes` and `--exptypes`
 By default, all exported entries will be processed and converted to types that 1Password can import.  The options ```--imptypes``` and ```--exptypes``` allow you to selectively choose which entry types to process on import and which entry types to export to the 1Password 1PIF file, respectively.
@@ -276,6 +287,7 @@ The **onepif2html** converter is used for printing out your 1Password entries.  
 ---
 
 ### ● Clipperz
+
 Launch and log into the clipperz web interface, and export its database to the JSON format.  Select the **data** tab, in the
 upper right of the web interface, select `Export` from the left sidebar, and then click
 the `Export to JSON` link.  This will open a new page, containing your data.  Select and Copy all of the text in the box.
@@ -293,7 +305,8 @@ The Clipperz converter currently supports only English field names.
 ---
 
 ### ● CSV
-This is a generic CSV converter which currently handles Logins.  Construct the CSV in a spreadsheet program - it must have the following columns: Title, Username, Password, URL, Notes.  Ensure the first row is a column header with those names (case does not matter).  Additional columns may follow, and their titles will be used to create custom fields in the entry, and the corresponding values will be stored in these fields.
+
+This is a generic CSV converter which currently handles Logins.  Construct the CSV in a spreadsheet program - it must have the following columns: Title, Username, Password, URL, Notes.  It may also have a column named Tags.  Ensure the first row is a column header with those names (case does not matter).  You may add additional columns, and their titles will be used to create custom fields in the entry, and the corresponding values will be stored in these fields (do not use the reserved column names mentioned above).  If there is a Tags column, the cells should contain any number of comma-separated values to be stored into 1Password's Tags.
 
 ---
 
@@ -309,6 +322,11 @@ Note: Data Guardian does not construct a reliable CSV file.  In certain cases, i
 
 Launch DataVault and export its database to a text file using the `Tools > Export` menu item.  Select the **All Items (DVX, CSV)** choice, and click `OK`.  In the *Save As* dialog, navigate to your **Desktop** folder, and save the file with the name **pm_export.csv** to your Desktop, leaving the **Save as type** set to *CSV files (.csv files)*. You may now quit DataVault.
 
+Note: The DataVault CSV export is lossy - it does not export the Category, Type, or Template information.  The DataVault CSV export on Windows is lossy.  The user interface accepts Unicode characters, however, only latin1 characters are exported to the CSV file.  Non-latin1 characters are transliterated.  For example, the character *ş* becomes *s*.
+.
+
+Note: The CSV export for DataVault for OS X does not properly CSV-quote its data.  This will cause the converter to skip the problematic record and generate a warning.  You will need to manually enter any of these noted records.
+
 Note: DataVault has several essentially identical templates, which are indistinguishable in the CSV export.  These are treated as a single DataVault template, and are mapped into 1Password categories.  These are:
 
 - bank account, checking account     --> bankacct
@@ -319,6 +337,7 @@ Note: DataVault has several essentially identical templates, which are indisting
 ---
 
 ### ● EssentialPIM
+
 Launch EssentialPIM and export its password database to a text file using the `File > Export > Password Entries > Comma Separated Values (*.csv)...` menu.  Select All entries from the *Entries to be exported* dialog.   You may optionally select the fields you want exported as well by selecting the `Fields...` button (but you should leave selected the fields that correspond to the stock fields: Title, User Name, Password, URL, and Notes).  Click the `OK` button, and navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit EssentialPIM.
 
 Note: EssentialPIM does not properly handle the exported field names if the names contain any comma characters.  Before you export, edit a single password entry record in EssentialPIM, and examine each of your field names. Replace any commas in the field names some other character.  Editing the field names inside a single record will globally change the field names for all records.  Once the commas are removed from the field names, you may now export your data.
@@ -326,6 +345,7 @@ Note: EssentialPIM does not properly handle the exported field names if the name
 ---
 
 ### ● eWallet
+
 Launch eWallet and export its database to a text file using the `File > Save As > Text File...` menu.  Save the file with the name **pm_export.txt** to your Desktop.  You may now quit eWallet.
 
 The eWallet type of Picture Card will be exported as Secure Notes; no pictures will be exported.
@@ -344,7 +364,14 @@ If the conversion indicates the same number of records as contained in your eWal
 
 ---
 
+### ● F-Secure KEY
+
+Launch F-Secure KEY and export its database to a text file.  Click `Settings` in the sidebar, and then click `Export passwords` in the Settings pane.  Click the `Export` button, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit F-Secure KEY.
+
+---
+
 ### ● Handy Safe
+
 OS X: Launch Handy Safe and select the HANDY SAFE (topmost) grouping in the Handy Safe left sidebar.  To export the database as an XML export file, select the `File > Export` menu item.
 
 Navigate to your **Desktop** folder in the Export File dialog, and in the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit Handy Safe.
@@ -358,7 +385,8 @@ Click `OK` when export warning dialog appears (e.g. *The information in exported
 
 ---
 
-### ● KeePass 2
+### ● Keepass 2
+
 Launch KeePass 2, and export its database to an XML export file using the ```File > Export ...``` menu item, and select the KeePass XML (2.x) format.  In the `File: Export to:` section at the bottom of the dialog, click the floppy disk icon to select the location.  Select your **Desktop** folder, and in the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you should now have your data exported as an XML file by the name above on your Desktop.  You may now quit KeePass 2.
 
 The converter will decode and convert an entry's attachments. They are placed in a folder named **1P4_Attachments** in the same location that the **1P4_import.1pif** file will be created.  An entry's attachments are placed in a sub-directory named with the entry's Title.
@@ -366,11 +394,23 @@ The converter will decode and convert an entry's attachments. They are placed in
 ---
 
 ### ● KeePassX
+
 Launch KeePassX, and export its database to a text file using the `File > Export to >  KeePassX XML File...` menu.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit KeePassX.
+
+The converter will decode and convert an entry's attachment. It is placed in a folder named **1P4_Attachments** in the same location that the **1P4_import.1pif** file will be created.  An entry's attachment is placed in a sub-directory named with the entry's Title.
+
+**Note**: KeePassX version 2.0 does not support an XML export.  However, its database can be read by KeePass 2.  If you can install Keepass 2, you can use the Keepass 2 instructions above to perform the export and conversion using the **keepass2** converter.  Unfortunately Keepass 2 installation on an OS X system is non-trivial, so if you happen to have a PC, do the export there.  KeePassX version 2 can export to CSV, so you may also use the **csv** converter to perform the conversion.
+
+---
+
+### ● Keeper Desktop
+
+Launch Keeper Desktop, and export its database to a file using the `Backup` button on the upper right side of the window.  Select the last `Export Now` button, labeled *Export to Excel (not encrypted)*.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit Keeper Desktop. 
 
 ---
 
 ### ● Keychain
+
 The **Keychain Access** app allows you to view your OS X keychains.  It will show both local OS X keychains and the iCloud Keychain.  However, **Keychain Access** does does not support exporting the contents of keychains; instead, the OS X command line `security` tool provides this capability.  To further complicate the issue, the `security` tool only supports dumping entries from *local* keychains; iCloud keychains require copying entries to a new local keychain.
 
 When run, the `security` tool will present many confirmation dialogs, one confirmation dialog per item in your Keychain.  So you will have to press `Allow` many times, or you can use an AppleScript to help automate this.  To see how many entries you have, lanuch `Applications > Utilties > Keychain Access`, and select the **login** item under **Keychains**, and **All Items** under **Categories**.  The list of items that will be exported (and hence require confirmation) is in the area at the right.
@@ -414,10 +454,10 @@ end tell
 
 replacing the word **MYPASSWORD** with the password you just set for the keychain.  Run the AppleScript to automate performing the password entry.
 
-.  To export this local copy of your iCloud Keychain, copy the command below and paste it into the Terminal app:
+To export this local copy of your iCloud Keychain, copy the command below and paste it into the Terminal app:
 
 ```
-security dump-keychain -d local-icloud > ~/Desktop/pm_export-icloud.txt
+security dump-keychain -d local-icloud.keychain > ~/Desktop/pm_export-icloud.txt
 ```
 
 and press `Enter`.  As above, repeatedly press `Allow`, or use the AppleScript method to automate the tedious process.  Once the export is complete, you may delete the **local-icloud** keychain in `Keychain Access` if you wish (delete both References and Files).
@@ -459,6 +499,8 @@ the *File name* area, enter the name **pm_export.txt**.  Click `Save`, and you s
 
 **Note**: mSecure on Windows 3.5.4 (and probably earlier) does not properly export CSV data.  There are issues with the characters backslash \ and double-quotes ".  There may be additional issues due to the incorrect and ambiguous handling of these escape and quoting characters.  Before you uninstall mSecure, you should verify your data against the data imported into 1Password.
 
+Note: The mSecure CSV export on Windows is lossy.  The user interface accepts Unicode characters, however, only latin1 characters are exported to the CSV file.  Non-latin1 characters are transliterated.  For example, the character *ş* becomes *s*.
+
 ---
 
 ### ● Norton Identity Safe
@@ -493,18 +535,51 @@ Launch Password Depot.  On the left side, select your password file's name (or t
 
 ---
 
+### ● Passwords Plus
+
+Launch Passwords Plus, and export its database to a file using the `Tools > Export` menu item.  Click the `Select Location` button, and enter the name **pm_export.csv** in the *Save As* area of the dialog, and click the `Where` button to navigate to your **Desktop** folder.  Click the `Save` button, and then click the `Export` button in the original dialog, and click the `OK` button when the final dialog appears.  The name of your *name_of_export_file* will be **pm_export.csv**.  You may now quit Passwords Plus. 
+
+---
+
 ### ● PasswordWallet
 
 Launch PasswordWallet, and export its database as a text file using the `File > Export > Visible entries to text file...` menu.  Enter the wallet's password when the password dialog appears.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit PasswordWallet.
 
 ---
 
+### ● RoboForm
+
+RoboForm's Passcards/Logins, Identities, and Safenotes can be exported using its Print List feature.  The converter currently supports Passcards/Logins and Safenotes conversions. 
+
+Launch RoboForm for OS X or for Windows, and export your passcards/logins, identities, and safenotes as follows:
+
+For RoboForm 6 for Windows, use the Passcard Editor's `Passcard > Print List...` menu item.  When the *Roboform Passcards List* dialog appears, select *Passcards* from the pulldown at the top of the dialog, and enable the *Full URL* checkbox.   Now click the Save button. Navigate to your **Desktop** folder, and save the file with the name **pm_export_logins.html** to your Desktop. This file name will be the name you use as your *name_of_export_file*.
+
+For RoboForm 7 for Windows, launch the RoboForm Editor, and click the green RoboForm button in the upper left of the dialog, and select `Print List... > Logins`.  Enter your master password when prompted.  When the print dialog appears, click the Save button. Navigate to your **Desktop** folder, and save the file with the name **pm_export_logins.html** to your Desktop. This file name will be the name you use as your *name_of_export_file*.  See Note below.
+
+
+For OS X, use the `File > Print List...` menu and select **Logins**.  RoboForm will save a file to your Desktop that begins with the name *RoboForm Logins* and ends with the current date.  This is your conversions file - you may want to rename it to a simpler **pm_export_logins.html**, and use that name as your *name_of_export_file*.
+
+You may also want to export your Identities and Safenotes now, using a similar procedure, but using the file name **pm_export_identities.html** and **pm_export_safenotes.html**, respectively.
+
+You may now quit RoboForm.  Perform conversions and imports on each of the files you exported.  The **roboform** converter will convert one or more export files at once, so you may specify each of the files you exported above on the same command line.  Example:
+
+    perl convert_to_1p4 roboform -v pm_export_logins.html pm_export_identities.html pm_export_safenotes.html
+    
+The command above will convert all three export files into a single 1PIF file containing your converted logins, identity items, and safenotes.
+
+Note: RoboForm version 7 and above does not export the full original URL for Login items.  You will probably need to edit some login entires within 1Password to make Open and Fill work correctly.
+
+---
+
 ### ● Safe in Cloud
+
 Launch Safe in Cloud, and export its database to an XML file using the `File > Export > As XML` menu.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit Safe in Cloud.
 
 ---
 
 ### ● SafeWallet
+
 Launch SafeWallet, and export its database to an XML file.  On OS X, use the `File > Export...` menu.  Select the XML tab, and click `Export`.  On Windows, use the `File > Export Wallet` menu, select the `Export to XML file` button, and click Next.  Click the `Browse button`.
 
 Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  On Windows, click the `Finish` button and press `OK` when the successful export dialog appears.  You may now quit SafeWallet.
@@ -512,6 +587,7 @@ Navigate to your **Desktop** folder, and save the file with the name **pm_export
 ---
 
 ### ● SPB Wallet
+
 There is no need to export any data from SPB Wallet.  The converter will read and decrypt the data directly from the SPB Wallet .swl file.  It might be easiest to move your .swl wallet file to your Desktop.  When you enter your command line, use your .swl wallet file's name as *name_of_export_file*.
 
 If would prefer not to move the .swl file, you'll have to specify a path to your wallet file in place of the relative path ..\*name_of_your_spbwallet_file*.
@@ -519,12 +595,39 @@ If would prefer not to move the .swl file, you'll have to specify a path to your
 ---
 
 ### ● SplashID Safe
+
 Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vld** after exporting the data).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
 
 ---
 
-### ● vCard (from OS X Contacts)
-Launch the OS X Contacts app, select the desired contacts, and export them to a vCard file using the `File > Export... > Export vCard...` menu.  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vcf** after exporting the data).  Click `Save`.  You may now quit Contacts.
+### ● vCard
+
+The vCard converter will import contacts into the Identity category by default.  Include the `--securenote` option to place them into the Secure Note category instead.
+
+If an appropriate Perl graphics libraries is installed, and the `--icon` option is included, the vCard converter will import the vCard's icon.  The currently supported graphics library is: GD.
+
+##### OS X Contacts
+To export from OS X Contacts, launch the OS X Contacts app, select the desired contacts, and export them to a vCard file using the `File > Export... > Export vCard...` menu.  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vcf** after exporting the data).  Click `Save`.  You may now quit Contacts.
+
+##### iCloud Contacts
+
+To export from Contacts on iCloud, launch Safari, and log into your iCloud account.  Click the **Contacts** icon.  Select one or more contacts from the list (you can click on a single contact and then use ⌘-A to select all contacts).  Then, click the gear icon at the bottom left of the broswer window, and select `Export vCard...`. Safari will create a new .vcf file in your Downloads folder.  It will also prompt you to import your items into Contacts - you probably want to deny this by hitting the `Cancel` button.  You may now log out of your browser's iCloud, or just quit Safari, or close the page.  Move the newly created .vcf file onto your Desktop, and use this file's name as your *name_of_export_file*.
+
+##### Other vCard Exports
+
+The converter has not been tested with vCard exports from other applications.  Please contact me with any requests you have.
+
+---
+
+### ● Text files to notes
+
+This converter will import text files from the file system into Secure Notes.  You may supply one or more file paths on the command line.  If you supply a directory name, its contents will be converted.  Sub-directories will be ignored unless you supply the `-r` or `--recurse` option.
+
+You will need to install an additional Perl module to use this.  Issue the command:
+
+    cpan File::Type
+
+in the command shell.  This only needs to be done once, prior to using this converter.
 
 ---
 

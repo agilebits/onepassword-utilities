@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Clipperz 1.00;
+package Converters::Clipperz 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use JSON::PP;
 
 my %card_field_specs = (
@@ -53,7 +55,7 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
+        'opts'          => [],
     };
 }
 
@@ -61,50 +63,44 @@ sub do_import {
     my ($file, $imptypes) = @_;
     my %Cards;
 
-    my $decoded;
-    {
-        local $/;
-        open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
-        $_   = <$fh>;
-	s/^\x{ef}\x{bb}\x{bf}//	if $^O eq 'MSWin32';
-        $decoded = decode_json $_;
-        close $fh;
-    }
+    $_ = slurp_file($file);
+
+    s/^\x{ef}\x{bb}\x{bf}//	if $^O eq 'MSWin32';		# remove BOM
+    my $decoded = decode_json $_;
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
-    for (@$decoded) {
-	my $itype = find_card_type($_->{'currentVersion'}{'fields'});
+    for my $entry (@$decoded) {
+	my (%cmeta, @fieldlist);
+	my $itype = find_card_type($entry->{'currentVersion'}{'fields'});
 
 	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, $_, $_->{'label'}, undef, \$_->{'data'}{'notes'});
+	$cmeta{'title'} = $entry->{'label'};
+	$cmeta{'notes'} = $entry->{'data'}{'notes'};
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
+	for my $key (keys %{$entry->{'currentVersion'}{'fields'}}) {
+	    my ($label, $value) = ( @{$entry->{'currentVersion'}{'fields'}{$key}}{'label','value'} );
+	    next if not defined $value or $value eq '';
+	    push @fieldlist, [ $label => $value ];		# @fieldlist maintains card's field order
 	}
-	for (@k) {
+
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
+
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
 	$n++;
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -112,10 +108,9 @@ sub find_card_type {
     my $f = shift;
 
     for my $type (sort by_test_order keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 	    for (keys %$f) {
-		# type hint
-		if ($def->[1] and $f->{$_}{'label'} =~ $def->[2]) {
+		if ($cfs->[CFS_TYPEHINT] and $f->{$_}{'label'} =~ $cfs->[CFS_MATCHSTR]) {
 		    debug "type detected as '$type' (key='$f->{$_}{'label'}')";
 		    return $type;
 		}
@@ -125,63 +120,6 @@ sub find_card_type {
 
     debug "\t\ttype defaulting to 'note'";
     return 'note';
-}
-
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $carddata, $title, $tags, $notesref, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $$notesref,
-	tags	=> $tags,
-    );
-    my $f = $carddata->{'currentVersion'}{'fields'};
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (keys %$f) {
-	    my ($inkey, $value) = ($f->{$_}{'label'}, $f->{$_}{'value'});
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
-		delete $f->{$_};	# delete matched so undetected are pushed to notes below
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if length $norm_cards{'notes'} > 0 and keys %$f;
-    for (keys %$f) {
-	next if $f->{$_}{'value'} eq '';
-	$norm_cards{'notes'} .= "\n"	if length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', $f->{$_}{'label'}, $f->{$_}{'value'};
-    }
-
-    return \%norm_cards;
 }
 
 # sort logins as the last to check

@@ -4,7 +4,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Spbwallet 1.01;
+package Converters::Spbwallet 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -20,15 +20,14 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record hexdump);
+use Utils::Utils;
+use Utils::Normalize;
+
 use DBI;
 use Crypt::Rijndael;
 use Digest::SHA1 qw(sha1);
 use Encode qw(decode encode);
 use Term::ReadKey;
-
-#use Time::Local qw(timelocal);
-#use Time::Piece;
 
 my %card_field_specs = (
     bankacct =>                 { textname => 'Bank Account', type_out => 'bankacct', fields => [
@@ -129,6 +128,8 @@ my %card_field_specs = (
 	[ 'password',		0, qr/^Password$/, 			{ type_out => 'login' } ],
 	[ 'url',		0, qr/^Web Site$/, 			{ type_out => 'login' } ],
     ]},
+    note =>                     { textname => '', fields => [
+    ]},
     onlineshoppingacct =>       { textname => 'Online Shopping Account', type_out => 'login', fields => [
 	[ 'username',		0, qr/^User Name$/, ],
 	[ 'password',		0, qr/^Password$/, ],
@@ -183,8 +184,6 @@ my %card_field_specs = (
 	[ 'password',		0, qr/^Password$/, ],
 	[ 'url',		0, qr/^Web Site$/, ],
     ]},
-    note =>                     { textname => '', fields => [
-    ]},
 );
 
 $DB::single = 1;					# triggers breakpoint when debugging
@@ -207,7 +206,6 @@ sub do_import {
     my %Cards;
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
 
     # Ask for the user's password
     print "Enter your SPB Wallet password: ";
@@ -330,120 +328,47 @@ sub do_import {
 	}
 	for my $template (sort keys %t) {
 	    say "$template";
-	    say "\t$_"	for keys $t{$template};
+	    say "\t$_"	for keys %{$t{$template}};
 	}
 	exit;
     }
 
     for my $cardid (keys %cards) {
-	my @fieldlist = ();
-	my $card_title = $cards{$cardid}{'Name'} // 'Untitled';
-	my @card_category = get_category(\%categories, $cards{$cardid}{'ParentCategoryID'});
-	my $card_tags = join '::', @card_category;
-
 	my $itype = find_card_type($cards{$cardid}->{'TemplateID'}->{'Name'});
 
 	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	debug 'Category: ', $card_tags;
-	my $card_notes = $cards{$cardid}{'Description'};
+	my (%cmeta, @fieldlist);
+	$cmeta{'title'} = $cards{$cardid}{'Name'} // 'Untitled';
+	my @card_category = get_category(\%categories, $cards{$cardid}{'ParentCategoryID'});
+	$cmeta{'tags'} = join '::', @card_category;
+	$cmeta{'folder'} = [ @card_category ];
+	debug 'Category: ', $cmeta{'tags'};
+	$cmeta{'notes'} = $cards{$cardid}{'Description'};
 
 	for (@{$cards{$cardid}{'values'}}) {
-	    push @fieldlist, [ $_->{'def'}->{'Name'} => $_->{'value'} ];		# done for confority with other converters - no inherent field order
+	    push @fieldlist, [ $_->{'def'}->{'Name'} => $_->{'value'} ];
 	    debug "\t    Field((T=$_->{'def'}->{'FieldTypeID'} $_->{'def'}->{'Name'}) = ", $_->{'value'} // '';
 	}
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist,
-	    { title	=> $card_title,
-	      tags	=> $card_tags,
-	      notes	=> $card_notes,
-	      folder	=> \@card_category });
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
 	$n++;
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if (!defined $def->[2] or $inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 sub find_card_type {
@@ -524,6 +449,7 @@ sub parse_date_string {
 
 sub date2epoch {
     my $t = parse_date_string @_;
+    return undef if not defined $t;
     return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 

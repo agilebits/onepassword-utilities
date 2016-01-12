@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Passworddepot 1.00;
+package Converters::Passworddepot 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use XML::XPath;
 use XML::XPath::XMLParser;
 use Time::Local qw(timelocal);
@@ -35,8 +37,8 @@ my %card_field_specs = (
 	[ 'cvv',		0, qr/^IDS_CardCode$/ ],
 	[ 'phoneTollFree',      0, qr/^IDS_CardPhone$/ ],
 	[ 'website',      	0, qr/^IDS_CardURL$/ ],
-	[ '_additioncode',      0, qr/^IDS_CardAdditionalCode$/ ],
-	[ '_additioninfo',      0, qr/^IDS_CardAdditionalInfo$/ ],
+	[ '_additioncode',      0, qr/^IDS_CardAdditionalCode$/,	{ custfield => [ $Utils::PIF::sn_details, $Utils::PIF::k_string, 'additional code' ] } ],
+	[ '_additioninfo',      0, qr/^IDS_CardAdditionalInfo$/,	{ custfield => [ $Utils::PIF::sn_details, $Utils::PIF::k_string, 'additional info' ] } ],
 	[ 'pin',      		0, qr/^IDS_CardPIN$/ ],
     ]},
     eccard =>			{ textname => undef, type_out => 'bankacct', fields => [
@@ -45,20 +47,20 @@ my %card_field_specs = (
 	[ 'url',		0, qr/^URL$/,				{ type_out => 'login' } ],
 	[ 'owner',		0, qr/^IDS_ECHolder$/ ],
 	[ 'accountNo',		0, qr/^IDS_ECAccountNumber$/ ],
-	[ '_bankcode',		0, qr/^IDS_ECBLZ$/ ],
+	[ '_bankcode',		0, qr/^IDS_ECBLZ$/,			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'bank code' ] } ],
 	[ 'bankName',		0, qr/^IDS_ECBankName$/ ],
-	[ '_bic',		0, qr/^IDS_ECBIC$/ ],
+	[ '_bic',		0, qr/^IDS_ECBIC$/,			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'bic' ] } ],
 	[ 'iban',		0, qr/^IDS_ECIBAN$/ ],
 	[ 'branchPhone',	0, qr/^IDS_ECPhone$/ ],
 	[ 'telephonePin',	0, qr/^IDS_ECPIN$/ ],
-	[ '_eccardnum',		0, qr/^IDS_ECCardNumber$/ ],
-	[ '_legitimacyid',	0, qr/^IDS_ECLegitimacyID$/ ],
+	[ '_eccardnum',		0, qr/^IDS_ECCardNumber$/,		{ custfield => [ 'otherbank.EC Card', $Utils::PIF::k_string, 'card number' ] } ],
+	[ '_legitimacyid',	0, qr/^IDS_ECLegitimacyID$/,		{ custfield => [ 'otherbank.EC Card', $Utils::PIF::k_string, 'legitimacy id' ] } ],
     ]},
     encryptedfile =>		{ textname => undef, type_out => 'note', fields => [
-	[ 'filepath',		0, undef ],
+	[ 'filepath',		0, qr/^_NeverMatches_$/ ],
     ]},
     identity =>			{ textname => undef, fields => [
-	[ '_acct_or_id',	0, qr/^IDS_IdentityName$/ ],
+	[ '_acct_or_id',	0, qr/^IDS_IdentityName$/,		{ custfield => [ 'other.Miscellaneous', $Utils::PIF::k_string, 'account/id' ] } ],
 	[ 'email',		0, qr/^IDS_IdentityEmail$/ ],
 	[ 'firstname',		0, qr/^IDS_IdentityFirstName$/ ],
 	[ 'lastname',		0, qr/^IDS_IdentityLastName$/ ],
@@ -74,7 +76,7 @@ my %card_field_specs = (
 	[ 'website',		0, qr/^IDS_IdentityWebsite$/ ],
 	[ 'birthdate',		0, qr/^IDS_IdentityBirthDate$/,		{ func => sub { return days2epoch($_[0]) } } ],
 	[ 'cellphone',		0, qr/^IDS_IdentityMobile$/ ],
-	[ '_fax',		0, qr/^IDS_IdentityFax$/ ],
+	[ '_fax',		0, qr/^IDS_IdentityFax$/,		{ custfield => [ $Utils::PIF::sn_address, $Utils::PIF::k_string, 'fax' ] } ],
     ]},
     information =>		{ textname => undef, type_out => 'note', fields => [
     ]},
@@ -84,20 +86,20 @@ my %card_field_specs = (
 	[ 'url',		0, qr/^URL$/, ],
     ]},
     software =>			{ textname => undef, type_out => 'software', fields => [
-	[ '_product',		0, qr/^IDS_LicenseProduct$/ ],
+    									# Can't place extra fields into main section of software
+	[ '_product',		0, qr/^IDS_LicenseProduct$/,		{ custfield => [ 'other.Miscellaneous', $Utils::PIF::k_string, 'product' ] } ],
 	[ 'product_version',	0, qr/^IDS_LicenseVersion$/ ],
 	[ 'reg_name',		0, qr/^IDS_LicenseName$/ ],
 	[ 'reg_code',		0, qr/^IDS_LicenseKey$/ ],
-	[ '_reg_code2',		0, qr/^IDS_LicenseAdditionalKey$/ ],
+	[ '_reg_code2',		0, qr/^IDS_LicenseAdditionalKey$/,	{ custfield => [ 'other.Miscellaneous', $Utils::PIF::k_string, 'additional key' ] } ],
 	[ '_licenseprotected',	0, qr/^IDS_LicenseProtected$/ ],
 	[ 'url',		0, qr/^IDS_LicenseURL$/,		{ type_out => 'login' } ],
 	[ 'username',		0, qr/^IDS_LicenseUserName$/,		{ type_out => 'login' } ],
 	[ 'password',		0, qr/^IDS_LicensePassword$/,		{ type_out => 'login' } ],
-
 	[ 'order_date',		0, qr/^IDS_LicensePurchaseDate$/,	{ func => sub { return days2epoch($_[0]) } } ],
 	[ 'order_number',	0, qr/^IDS_LicenseOrderNumber$/ ],
 	[ 'reg_email',		0, qr/^IDS_LicenseEmail$/ ],
-	[ '_licenseexpires',	0, qr/^IDS_LicenseExpires$/ ],
+	[ '_licenseexpires',	0, qr/^IDS_LicenseExpires$/,		{ custfield => [ 'other.Miscellaneous', $Utils::PIF::k_string, 'license expiry' ] } ],
     ]},
 );
 
@@ -117,21 +119,15 @@ sub do_import {
     my ($file, $imptypes) = @_;
     my %Cards;
 
-    {
-	local $/ = undef;
-	open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
-	$_ = <$fh>;
-	close $fh;
-    }
+    $_ = slurp_file($file);
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
 
     my $xp = XML::XPath->new(xml => $_);
 
     my $cardnodes = $xp->findnodes('//PASSWORDS//ITEM');
     foreach my $cardnode (@$cardnodes) {
-	my (@card_tags, @groups, $card_modified);
+	my (@groups, $itype, %cmeta, @fieldlist);
 
 	for (my $node = $cardnode->getParentNode(); $node->getName() =~ /^GROUP$/; $node = $node->getParentNode()) {
 	    my $v = $node->getAttribute("NAME");
@@ -139,13 +135,12 @@ sub do_import {
 	}
 	shift @groups	if scalar @groups;			# toss the wallet name
 	if (@groups) {
-	    push @card_tags, join '::', @groups;
-	    debug 'Group: ', $card_tags[-1];
+	    push @{$cmeta{'tags'}}, join '::', @groups;
+	    $cmeta{'folder'} = \@groups;
+	    debug 'Group: ', $cmeta{'tags'}[-1];
 	}
 
-	my (%c, $card_title, @card_notes, $itype, @fieldlist);
 	if (my $fieldnodes = $xp->findnodes('*', $cardnode)) {
-	    my $fieldindex = 1;;
 	    foreach my $fieldnode (@$fieldnodes) {
 		my $f = $fieldnode->getName();
 		my $v = $fieldnode->string_value;
@@ -153,29 +148,29 @@ sub do_import {
 		next unless $f =~ /^(DESCRIPTION|TYPE|PASSWORD|USERNAME|URL|EXPIRYDATE|LASTMODIFIED|IMPORTANCE|COMMENT|CATEGORY|CREATED|URLS|CUSTOMFIELDS)$/;
 
 		if ($f eq 'DESCRIPTION') {
-		    $card_title = $v // 'Untitled';
-		    debug "\tCard: ", $card_title;
+		    $cmeta{'title'} = $v // 'Untitled';
+		    debug "\tCard: ", $cmeta{'title'};
 		}
 		elsif ($f eq 'TYPE') {
 		    $itype = item_type_to_name($v);
 		}
 		elsif ($f eq 'COMMENT') {
-		    unshift @card_notes, $v . "\n"		if $v ne '';
+		    unshift @{$cmeta{'notes'}}, $v . "\n"		if $v ne '';
 		}
 		elsif ($f eq 'CATEGORY') {
-		    push @card_tags, $v				if $v ne '';
+		    push @{$cmeta{'tags'}}, $v				if $v ne '';
 		}
 		elsif ($f eq 'IMPORTANCE') {
-		    push @card_tags, join ': ', 'Importance', (qw/High unused Low/)[$v]	if $v == 0 or $v == 2;
+		    push @{$cmeta{'tags'}}, join ': ', 'Importance', (qw/High unused Low/)[$v]	if $v == 0 or $v == 2;
 		}
 		elsif ($f eq 'URLS') {
-		    push @card_notes, 'Extra URLs' . $v		if $v ne '';
+		    push @{$cmeta{'notes'}}, 'Extra URLs' . $v		if $v ne '';
 		}
 		elsif ($f eq 'EXPIRYDATE' and ($itype eq 'software' or $v eq '00.00.0000')) {
 		    1;	# skip
 		}
 		elsif ($f eq 'LASTMODIFIED' and $main::opts{'modified'}) {
-		    $card_modified = date2epoch($v);
+		    $cmeta{'modified'} = date2epoch($v);
 		}
 		elsif ($f eq 'CUSTOMFIELDS') {
 		    if (my $customfieldnodes = $xp->findnodes('FIELD', $fieldnode)) {
@@ -188,12 +183,11 @@ sub do_import {
 				$f = 'filepath';
 			    }
 			    if ($itype eq 'information' and $f eq 'IDS_InformationText') {
-				unshift @card_notes, $v . "\n"		if $v ne '';
+				unshift @{$cmeta{'notes'}}, $v . "\n"		if $v ne '';
 			    }
 			    else {
 				debug "\t    cField: $f = ", $v // '';
-				push @fieldlist, [ $f => $v ]	if $v ne '';		# maintain the field order, in case destination is notes
-				$fieldindex++;
+				push @fieldlist, [ $f => $v ]	if $v ne '';
 			    }
 			}
 		    }
@@ -203,8 +197,7 @@ sub do_import {
 		    # held in equivalent CUSTOMFIELDS fields.
 		    unless ($itype =~ /^creditcard|identity|software$/ and $f =~ /^URL|USERNAME|PASSWORD$/) {
 			debug "\t    Field: $f = ", $v // '';
-			push @fieldlist, [ $f => $v ];			# maintain the field order, in case destination is notes
-			$fieldindex++;
+			push @fieldlist, [ $f => $v ];
 		    }
 		}
 	    }
@@ -230,52 +223,22 @@ sub do_import {
 	    push @fieldlist, [ 'address' => \%addr ]		if keys %addr;
 	}
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist,
-	    { title	=> $card_title,
-	      tags	=> \@card_tags,
-	      notes	=> \@card_notes,
-	      folder	=> \@groups,
-	      modified	=> $card_modified });
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
 	$n++;
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('bankacct',       '_bankcode',	$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'bank code');
-    add_new_field('bankacct',       '_bic',		$Utils::PIF::sn_main,		$Utils::PIF::k_string,    'bic');
-    add_new_field('bankacct',       '_eccardnum',	'otherbank.EC Card',		$Utils::PIF::k_string,    'card number');
-    add_new_field('bankacct',       '_legitimacyid',	'otherbank.EC Card',		$Utils::PIF::k_string,    'legitimacy id');
-
-    add_new_field('identity',       '_acct_or_id',	'other.Miscellaneous',		$Utils::PIF::k_string,    'account/id');
-    add_new_field('identity',       '_fax',		$Utils::PIF::sn_address,	$Utils::PIF::k_string,    'fax');
-    add_new_field('creditcard',     '_additioncode',	$Utils::PIF::sn_details,	$Utils::PIF::k_string,    'additional code');
-    add_new_field('creditcard',     '_additioninfo',	$Utils::PIF::sn_details,	$Utils::PIF::k_string,    'additional info');
-    add_new_field('creditcard',     '_legitimacyid',	$Utils::PIF::sn_details,	$Utils::PIF::k_string,    'legitimacy id');
-    # Can't place extra fields into main section of software
-    add_new_field('software',       '_product',		'other.Miscellaneous',		$Utils::PIF::k_string,    'product');
-    add_new_field('software',       '_reg_code2',	'other.Miscellaneous',		$Utils::PIF::k_string,    'additional key');
-    add_new_field('software',       '_licenseexpires',	'other.Miscellaneous',		$Utils::PIF::k_string,    'license expiry');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -289,63 +252,6 @@ sub item_type_to_name {
 sub ccard_type_to_name {
     my $index = shift;
     return ('Mastercard', 'Discover', 'VISA', 'American Express', 'JCB', 'Diners Club')[$index];
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if (!defined $def->[2] or $inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	push @{$norm_cards->{'notes'}}, join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 # Date converters
@@ -384,6 +290,7 @@ sub days2epoch {
 
 sub date2epoch {
     my $t = parse_date_string @_;
+    return undef if not defined $t;
     return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 
