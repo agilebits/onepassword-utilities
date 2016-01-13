@@ -1,3 +1,78 @@
+Version 1.08:
+  New Converters:
+  - RoboForm converter now available.
+  - Keeper Desktop converter now available.
+  - Txt2notes converter now available, converts text files into Secure Notes.
+  - F-Secure KEY converter now available.
+  - Passwords Plus converter now available (OS X).
+
+  New Features:
+  - Option --addfields or -a will create custom fields for non-mappable fields instead of placing
+    them into notes.
+  - Option --tags or -t will add the specified comma-separated list of tags to each record.
+  - The keepassx converter will decode and convert an entry's attachment. It is placed in a folder
+    named 1P4_Attachments in the same location that the 1P4_import.1pif file will be created.  An entry's
+    attachment is placed in a sub-directory named with the entry's Title.
+  - The vcard converter option --securenote will place vCard data into a Secure Note, with custom fields
+    similar to an Identity.
+  - The 1PIF module supports icons if either of the Perl 'GD' or 'Image::Magick' libraries are available.
+  - The vCard converter will include icons when the --icon option is specified (and the required
+    library is available - see previous note).
+  - Added more import types to handysafe converter; added a multiple field-matching system to assist
+    category detection.
+  - The handysafe converter now has support for localalization (lang nl-nl).  More languages will be added
+    as requested.
+  - Languages directory for per-converter language translation files.
+  - Added output diagnostic to onepif2html converter to indicate the name of the created output file.
+  - Add support for 1Password's 'Password' category.
+  - The csv converter now accepts a Tags column.  The comma-separated values within that column will be
+    imported as 1Password Tags.
+
+  Changed:
+  - The --help option is a little more instructive.
+  - Converter ewallet's combolock and voicemail categories go to the Password category now.
+  - Converter splashid's frequentflyer now maps to the 1Password Rewards category.
+
+  Fixed:
+  - Several fixes for the onepif2html print converter: strip the BOM on Windows 1PIF exports; gracefully
+    handle unknown 1PIF typeNames; support the legacy typeNames allowed in the Windows UI.
+  - Minor Perl syntax changes throughout the code to satisfy Perl versions > 5.16.
+  - Remove extraneous, but harmless setting of imptypes in essetialpim converter.
+  - Remove extraneous comment in msecure converter; fixed duplicate key in frequentflyer definition.
+  - Splashid converter was not honoring --imptypes for user-defined types (user defined types are
+    specified as 'userdefined'.
+  - Splashid converter was not converting \b end of line characters into newline characters in
+    an entry's notes section (Windows only).
+  - The debug function unfold_and_chop() was not honoring its maxlen parameter.
+  - The debug function print_record was not outputing notes.
+  - Date parsing was broken in some cases for converters ewallet and lastpass.
+  - Several ewallet converter fixes.
+  - The safewallet converter was incorrectly detecting a web login category as an irc category.
+  - Several vcard converter fixes: 1) prevent vcard converter from importing an encoded photo into the notes
+    section; 2) converter was bailing after the first entry in a list of vcards.  3) Uses a new module for
+    parsing / packaging vCard data (Text::vFile::asData). 4) Handles vCard exports via iCloud.
+  - The handysafe converter was not picking up root-level nodes.
+  - Some debug output errors in Utils::PIF.pm.
+  - A date converter routine for some converters could cause an error under anomalous conditions - affected
+    converters: dataguardian, ironkey, keepass2, keepassx, keychain, passwordagent, passworddepot, spbwallet.
+  - The datavault converter on Windows could botch some multiline entries in the notes section.
+  - The onepif2html converter was not outputing a label for unlabeled URLs.
+  - The onepif2html converter was not handling the Password category.
+  - Converter keychain now avoids outputting a 0x0 (nil) hexvalue as a URI protocol.
+  - Converter keychain export instructions for iCloud keychain export was missing part of the fully-qualified
+    keychain name (e.g. local-icloud should have been local-icloud.keychain).
+
+  Internal Changes:
+  - Miscellaneous code refactoring and consolidating.
+  - New module Utils::Normalize.
+  - Simplify the lastpass converter's %card_field_specs table.
+  - convert_to_1p4 will now accept and pass to a converter more than a single filename argument.
+  - Modified the %card_field_specs table to include custom field definitions within the table.
+  - Made the normalize_card_data() function universal, and moved it to Utils::PIF.pm.
+  - Code updates to work with Perl versions newer than the old requirement of Perl 5.16.
+  - Debug output will include info about the export file supplied on the command line.
+  - Many code cleanups.
+
 Version 1.07:
   - New: The keepass2 converter will decode and convert an entry's attachments. They are placed in a folder
     named 1P4_Attachments in the same location that the 1P4_import.1pif file will be created.  An entry's

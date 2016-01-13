@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Licensekeeper 1.03;
+package Converters::Licensekeeper 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,12 +18,14 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
+use Encode;
 use File::Basename;
 use File::Spec;
 use XML::XPath;
 use XML::XPath::XMLParser;
-use Encode;
 use MIME::Base64;
 use Time::Local qw(timelocal);
 use Date::Calc qw(Add_Delta_DHMS);
@@ -60,18 +62,11 @@ sub do_import {
     my ($file, $imptypes) = @_;
     my %inCards;
 
-    {
-	local $/ = undef;
-	open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
-	$_ = <$fh>;
-	close $fh;
-    }
+    $_ = slurp_file($file);
 
     $attachmentdir = File::Spec->catfile( dirname($file), 'Attachments' );
 
     my $n = 1;
-    my ($npre_explode, $npost_explode);
-
 
     my $xp = XML::XPath->new(xml => $_);
 
@@ -130,116 +125,39 @@ sub do_import {
 	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	my %kvpairs = ();
+	my (%cmeta, @fieldlist);
 
-	my $card_title = $inCards{$cid}{'title'} // '';
-	my $card_notes = decode_base64($inCards{$cid}{'comments'})	if exists $inCards{$cid}{'comments'};
-	Encode::_utf8_on($card_notes);	# byte sequence is in utf8
+	$cmeta{'title'} = $inCards{$cid}{'title'} // '';
+	$cmeta{'notes'} = decode_base64($inCards{$cid}{'comments'})	if exists $inCards{$cid}{'comments'};
+	Encode::_utf8_on($cmeta{'notes'});	# byte sequence is in utf8
 	delete $inCards{$cid}{$_}		for qw/title comments/;
 
 	# handle renaming of attachments
-	do_rename($_, $card_title)	for @{$inCards{$cid}{'ATTACHMENTS'}};
+	do_rename($_, $cmeta{'title'})	for @{$inCards{$cid}{'ATTACHMENTS'}};
 	delete $inCards{$cid}{'ATTACHMENTS'};
 
-	# set the field / value pairs
-	for (keys $inCards{$cid}) {
-	    $kvpairs{$_} = $inCards{$cid}{$_};
-	    debug "\t    Field: ", ucfirst $_, ' = ', $kvpairs{$_};
+	for (keys %{$inCards{$cid}}) {
+	    debug "\t    Field: ", ucfirst $_, ' = ', $inCards{$cid}{$_};
+	    push @fieldlist, [ $_ => $inCards{$cid}{$_} ];
 	}
 
-	my @fieldlist;
-	for (keys %kvpairs) {
-	    push @fieldlist, [ $_ => $kvpairs{$_} ];			# done for confority with other converters - no inherent field order
-	}
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist,
-	    { title	=> $card_title,
-	      notes	=> $card_notes });
-
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
 	$n++;
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if (!defined $def->[2] or $inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 # Converts a Password Depot number of days since 12/31/1899 value into a 1Password epoch value
@@ -250,12 +168,6 @@ sub secs2epoch {
 	  Add_Delta_DHMS(2000,12,31,0,0,0, 0,0,0,$secs);
 
     return timelocal(0, 0, 0, $day, $month - 1, $year);
-}
-
-sub fs_safe {
-    local $_ = shift;
-    s/[:\/\\*?"<>|]/_/g;		# replace FS-unsafe chars
-    return $_;
 }
 
 # LicenseKeeper is not correct encoding XML-unsafe characters within the XML.

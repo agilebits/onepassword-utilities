@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Onepif2html 1.00;
+package Converters::Onepif2html 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin);
+use Utils::Utils;
+use Utils::Normalize;
+
 use JSON::PP;
 use XML::Simple;
 use XML::LibXSLT;
@@ -39,6 +41,7 @@ my %card_field_specs = (
     note =>		{ textname => '', fields => [ ]},
     outdoorlicense =>	{ textname => '', fields => [ ]},
     passport =>		{ textname => '', fields => [ ]},
+    password =>		{ textname => '', fields => [ ]},
     rewards =>		{ textname => '', fields => [ ]},
     server =>		{ textname => '', fields => [ ]},
     socialsecurity =>	{ textname => '', fields => [ ]},
@@ -80,9 +83,16 @@ sub do_import {
 	next if $_->{'typeName'} =~ /^system\.folder\./;
 
 	my $typekey = typename_to_typekey($_->{'typeName'});
-	next if $imptypes and ! exists $imptypes->{$typekey};
-	$n++;
-	next if exists $main::opts{'exptypes'} and ! exists $main::opts{'exptypes'}->{$typekey};
+	if (! defined $typekey) {
+	    say "Unknown typename: $_->{'typeName'}";
+	    $typekey = 'UNKNOWN';
+	    $n++;
+	}
+	else {
+	    next if $imptypes and ! exists $imptypes->{$typekey};
+	    $n++;
+	    next if exists $main::opts{'exptypes'} and ! exists $main::opts{'exptypes'}->{$typekey};
+	}
 	$exported{$typekey}++;
 	push @newlist, $_;
     }
@@ -110,21 +120,18 @@ sub do_import {
     debug "\n", $output;
     debug "Done\n";
 
-    my ($npre_explode, $npost_explode);
-
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
-
+    summarize_import('item', $n);
     return $output;
 }
 
 sub do_export {
     my $output = shift;
 
+    my $outfile;
     my $ntotal = 0;
 
     if (%exported) {
-	my $outfile = join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P_print.html');
+	$outfile = join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P_print.html');
 
 	open my $io, ">:encoding(utf8)", $outfile
 	    or bail "Unable to open 1PIF file: $outfile\n$!";
@@ -133,11 +140,12 @@ sub do_export {
 
 	for my $type (keys %exported) {
 	    $ntotal += $exported{$type};
-	    verbose "Exported $exported{$type} $type item", pluralize($exported{$type});
+	    verbose "Exported $exported{$type} $type ", pluralize('item', $exported{$type});
 	}
     }
 
-    verbose "Exported $ntotal total item", pluralize($ntotal);
+    verbose "Exported $ntotal total ", pluralize('item', $ntotal);
+    verbose "You may now open the file $outfile with a browser"	if $ntotal
 }
 
 sub epoch2date {
@@ -194,6 +202,26 @@ __DATA__
 	    <h3>Bank Accounts</h3>
 	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountUS']"/>
 	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.financial.BankAccountAU']">
+	    <h3>Bank Accounts (AU)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountAU']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.financial.BankAccountCA']">
+	    <h3>Bank Accounts (CA)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountCA']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.financial.BankAccountCH']">
+	    <h3>Bank Accounts (CH)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountCH']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.financial.BankAccountDE']">
+	    <h3>Bank Accounts (DE)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountDE']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.financial.BankAccountUK']">
+	    <h3>Bank Accounts (UK)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.financial.BankAccountUK']"/>
+	</xsl:if>
 
 	<xsl:if test="/opt/anon[typeName='wallet.financial.CreditCard']">
 	    <h3>Credit Cards</h3>
@@ -229,6 +257,38 @@ __DATA__
 	    <h3>Email</h3>
 	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.Email.v2']"/>
 	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.FTP']">
+	    <h3>FTP</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.FTP']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.DotMac']">
+	    <h3>MobileMe</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.DotMac']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.Email']">
+	    <h3>Email (legacy)</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.Email']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.GenericAccount']">
+	    <h3>Generic Account</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.GenericAccount']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.InstantMessenger']">
+	    <h3>Instant Messenger</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.InstantMessenger']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.ISP']">
+	    <h3>Internet Provider</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.ISP']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.iTunes']">
+	    <h3>iTunes</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.iTunes']"/>
+	</xsl:if>
+	<xsl:if test="/opt/anon[typeName='wallet.onlineservices.AmazonS3']">
+	    <h3>Amazon S3</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='wallet.onlineservices.AmazonS3']"/>
+	</xsl:if>
 
 	<xsl:if test="/opt/anon[typeName='wallet.membership.Membership']">
 	    <h3>Membership</h3>
@@ -243,6 +303,11 @@ __DATA__
 	<xsl:if test="/opt/anon[typeName='wallet.government.Passport']">
 	    <h3>Passport</h3>
 	    <xsl:apply-templates select="/opt/anon[typeName='wallet.government.Passport']"/>
+	</xsl:if>
+
+	<xsl:if test="/opt/anon[typeName='passwords.Password']">
+	    <h3>Password</h3>
+	    <xsl:apply-templates select="/opt/anon[typeName='passwords.Password']"/>
 	</xsl:if>
 
 	<xsl:if test="/opt/anon[typeName='wallet.membership.RewardProgram']">
@@ -333,7 +398,14 @@ __DATA__
 <xsl:template match="secureContents/URLs">
     <xsl:for-each select=".">
 	<li>
-	    <span class="fieldname"><xsl:value-of select="label" />: </span>
+	    <xsl:choose>
+		<xsl:when test="label != ''">
+		    <span class="fieldname"><xsl:value-of select = "label" />: </span>
+		</xsl:when>
+		<xsl:otherwise>
+		    <span class="fieldname">url: </span>
+		</xsl:otherwise>
+	    </xsl:choose>
 	    <xsl:value-of select = "url" />
 	</li>
     </xsl:for-each>

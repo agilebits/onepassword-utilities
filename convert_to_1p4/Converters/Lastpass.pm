@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Lastpass 1.00;
+package Converters::Lastpass 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Text::CSV;
 use Time::Local qw(timelocal);
 use Date::Calc qw(check_date Decode_Month Date_to_Days);
@@ -26,242 +28,221 @@ use Date::Calc qw(check_date Decode_Month Date_to_Days);
 # note: the second field, the type hint indicator (e.g. $card_field_specs{$type}[$i][1]}),
 # is not used, but remains for code-consisency with other converter modules.
 #
-
-=cut
-Generic
-=cut
-
 my %card_field_specs = (
-    ##XXX recheck each type - use lastpass defined types, not type-out types
-    bankacct => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Bank Account)(?:\x{0a}|\Z)/ms ],
-	[ 'bankName',		0, qr/^(Bank Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'accountType',	0, qr/^(Account Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return bankstrconv($_[0])} } ],
-	[ 'routingNo',		0, qr/^(Routing Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'accountNo',		0, qr/^(Account Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'swift',		0, qr/^(SWIFT Code):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'iban',		0, qr/^(IBAN Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'telephonePin',	0, qr/^(Pin):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'branchAddress',	0, qr/^(Branch Address):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'branchPhone',	0, qr/^(Branch Phone):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    bankacct => 		{ textname => 'Bank Account', fields => [
+	[ 'bankName',		0, 'Bank Name' ],
+	[ 'accountType',	0, 'Account Type',	{ func => sub {return bankstrconv($_[0])} } ],
+	[ 'routingNo',		0, 'Routing Number' ],
+	[ 'accountNo',		0, 'Account Number' ],
+	[ 'swift',		0, 'SWIFT Code' ],
+	[ 'iban',		0, 'IBAN Number' ],
+	[ 'telephonePin',	0, 'Pin' ],
+	[ 'branchAddress',	0, 'Branch Address' ],
+	[ 'branchPhone',	0, 'Branch Phone' ],
     ]},
-    creditcard => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Credit Card)(?:\x{0a}|\Z)/ms ],
-	[ 'cardholder',		0, qr/^(Name on Card):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'type',		0, qr/^(Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ func => sub{return lc $_[0]} } ],
-	[ 'ccnum',		0, qr/^(Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'cvv',		0, qr/^(Security Code):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'validFrom',		0, qr/^(Start Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2)} } ],
-	[ 'expiry',		0, qr/^(Expiration Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2)} } ],
+    creditcard => 		{ textname => 'Credit Card', fields => [
+	[ 'cardholder',		0, 'Name on Card' ],
+	[ 'type',		0, 'Type',		{ func => sub{return lc $_[0]} } ],
+	[ 'ccnum',		0, 'Number' ],
+	[ 'cvv',		0, 'Security Code' ],
+	[ 'validFrom',		0, 'Start Date',	{ func => sub {return date2monthYear($_[0], 2)} } ],
+	[ 'expiry',		0, 'Expiration Date',	{ func => sub {return date2monthYear($_[0], 2)} } ],
     ]},
-    database => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Database)(?:\x{0a}|\Z)/ms ],
-	[ 'database_type',	0, qr/^(Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'hostname',		0, qr/^(Hostname):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'port',		0, qr/^(Port):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'database',		0, qr/^(Database):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'username',		0, qr/^(Username):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'password',		0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sid',		0, qr/^(SID):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'alias',		0, qr/^(Alias):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    database => 		{ textname => 'Database', fields => [
+	[ 'database_type',	0, 'Type' ],
+	[ 'hostname',		0, 'Hostname' ],
+	[ 'port',		0, 'Port' ],
+	[ 'database',		0, 'Database' ],
+	[ 'username',		0, 'Username' ],
+	[ 'password',		0, 'Password' ],
+	[ 'sid',		0, 'SID' ],
+	[ 'alias',		0, 'Alias' ],
     ]},
-    driverslicense => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Driver's License)(?:\x{0a}|\Z)/ms ],
-	[ 'number',		0, qr/^(Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'expiry_date',	0, qr/^(Expiration Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
-	[ 'class',		0, qr/^(License Class):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'fullname',		0, qr/^(Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'address',		0, qr/^(Address):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'city',		0, qr/^(City \/ Town):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'state',		0, qr/^(State):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'zip',		0, qr/^(ZIP \/ Postal Code):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'country',		0, qr/^(Country):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'birthdate',		0, qr/^(Date of Birth):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2epoch($_[0], -1)} } ],
-	[ 'sex',		0, qr/^(Sex):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'height',		0, qr/^(Height):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    driverslicense => 		{ textname => 'Driver\'s License', fields => [
+	[ 'number',		0, 'Number' ],
+	[ 'expiry_date',	0, 'Expiration Date',	{ func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
+	[ 'class',		0, 'License Class' ],
+	[ 'fullname',		0, 'Name' ],
+	[ 'address',		0, 'Address' ],
+	[ 'city',		0, 'City / Town',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'city / town' ] } ],
+	[ 'state',		0, 'State' ],
+	[ 'zip',		0, 'ZIP / Postal Code',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'zip / postal code' ] } ],
+	[ 'country',		0, 'Country' ],
+	[ 'birthdate',		0, 'Date of Birth',	{ func => sub {return date2epoch($_[0], -1)} } ],
+	[ 'sex',		0, 'Sex' ],
+	[ 'height',		0, 'Height' ],
+
     ]},
-    email => 			{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Email Account)(?:\x{0a}|\Z)/ms ],
-	[ 'pop_username',	0, qr/^(Username):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'pop_password',	0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'pop_server',		0, qr/^(Server):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'pop_port',		0, qr/^(Port):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'pop_type',		0, qr/^(Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'smtp_server',	0, qr/^(SMTP Server):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'smtp_port',		0, qr/^(SMTP Port):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    email => 			{ textname => 'Email Account', fields => [
+	[ 'pop_username',	0, 'Username' ],
+	[ 'pop_password',	0, 'Password' ],
+	[ 'pop_server',		0, 'Server' ],
+	[ 'pop_port',		0, 'Port' ],
+	[ 'pop_type',		0, 'Type' ],
+	[ 'smtp_server',	0, 'SMTP Server' ],
+	[ 'smtp_port',		0, 'SMTP Port' ],
     ]},
-    healthinsurance => 		{ textname => undef, type_out => 'membership', fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Health Insurance)(?:\x{0a}|\Z)/ms ],
-	[ 'org_name',		0, qr/^(Company):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'phone',		0, qr/^(Company Phone):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'poltype',		0, qr/^(Policy Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'polid',		0, qr/^(Policy Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'grpid',		0, qr/^(Group ID):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'member_name',	0, qr/^(Member Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'membership_no',	0, qr/^(Member ID):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'physician',		0, qr/^(Physician Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'physicianphone',	0, qr/^(Physician Phone):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'physicianaddr',	0, qr/^(Physician Address):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'copay',		0, qr/^(Co-pay):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    healthinsurance => 		{ textname => 'Health Insurance', type_out => 'membership', fields => [
+	[ 'org_name',		0, 'Company' ],
+	[ 'phone',		0, 'Company Phone' ],
+	[ 'poltype',		0, 'Policy Type' ],
+	[ 'polid',		0, 'Policy Number' ],
+	[ 'grpid',		0, 'Group ID',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group ID' ] } ],
+	[ 'member_name',	0, 'Member Name' ],
+	[ 'membership_no',	0, 'Member ID' ],
+	[ 'physician',		0, 'Physician Name' ],
+	[ 'physicianphone',	0, 'Physician Phone' ],
+	[ 'physicianaddr',	0, 'Physician Address' ],
+	[ 'copay',		0, 'Co-pay' ],
     ]},
     identity =>			{ textname => undef, type_out => 'identity', fields => [		# special handling
-	[ 'cardtype',		0, undef ],
-	[ 'language', 		0, qr/^profilelanguage$/ ],
-	[ 'title', 		0, qr/^title$/ ],
-	[ 'firstname', 		0, qr/^firstname$/ ],
-	[ 'firstname2', 	0, qr/^firstname2$/ ],
-	[ 'firstname3', 	0, qr/^firstname3$/ ],
-	[ 'initial', 		0, qr/^middlename$/ ],
-	[ 'lastname', 		0, qr/^lastname$/ ],
-	[ 'lastname2', 		0, qr/^lastname2$/ ],
-	[ 'lastname3', 		0, qr/^lastname3$/ ],
-	[ 'username', 		0, qr/^username$/ ],
-	[ 'sex', 		0, qr/^gender$/, 		{ func => sub {return $_[0] =~ /F/i ? 'Female' : 'Male'} } ],
-	[ 'birthdate', 		0, qr/^birthday$/,		{ func => sub {return date2epoch($_[0], 2)} } ],
-	[ 'number', 		0, qr/^ssn$/,			{ type_out => 'socialsecurity' } ],
-	[ 'name',		0, qr/^ssnfullname$/,		{ type_out => 'socialsecurity', as_title => sub {return 'SS# ' . $_[0]{'value'}} } ],
-	[ 'company', 		0, qr/^company$/ ],
+	[ 'language', 		0, 'profilelanguage' ],
+	[ 'title', 		0, 'title' ],
+	[ 'firstname', 		0, 'firstname' ],
+	[ 'firstname2', 	0, 'firstname2' ],
+	[ 'firstname3', 	0, 'firstname3' ],
+	[ 'initial', 		0, 'middlename' ],
+	[ 'lastname', 		0, 'lastname' ],
+	[ 'lastname2', 		0, 'lastname2' ],
+	[ 'lastname3', 		0, 'lastname3' ],
+	[ 'username', 		0, 'username' ],
+	[ 'sex', 		0, 'gender', 		{ func => sub {return $_[0] =~ /F/i ? 'Female' : 'Male'} } ],
+	[ 'birthdate', 		0, 'birthday',		{ func => sub {return date2epoch($_[0], 2)} } ],
+	[ 'number', 		0, 'ssn',		{ type_out => 'socialsecurity' } ],
+	[ 'name',		0, 'ssnfullname',	{ type_out => 'socialsecurity', as_title => sub {return 'SS# ' . $_[0]{'value'}} } ],
+	[ 'company', 		0, 'company' ],
 
-	[ 'address', 		0, qr/^address$/ ],		# combined from original fields: address1 address2 address3
-	[ 'city', 		0, qr/^city$/ ],
-	[ 'state', 		0, qr/^state$/ ],
-	[ 'zip', 		0, qr/^zip$/ ],
-	[ 'country', 		0, qr/^country$/ ],
+	[ 'address', 		0, 'address' ],		# combined from original fields: address1 address2 address3
+	[ 'city', 		0, 'city' ],
+	[ 'state', 		0, 'state' ],
+	[ 'zip', 		0, 'zip' ],
+	[ 'country', 		0, 'country' ],
 
-	[ 'county', 		0, qr/^county$/ ],
-	[ 'state_name', 	0, qr/^state_name$/ ],
-	[ 'country_cc3l', 	0, qr/^country_cc3l$/ ],
-	[ 'country_name', 	0, qr/^country_name$/ ],
-	[ 'timezone', 		0, qr/^timezone$/ ],
-	[ 'email', 		0, qr/^email$/ ],
-	[ 'cellphone', 		0, qr/^cellphone$/ ],		# combined from original fields: mobilephone3lcc mobilephone mobileext
-	[ 'defphone', 		0, qr/^defphone$/ ],		# combined from original fields: phone3lcc phone phoneext
-	[ 'fax', 		0, qr/^fax$/ ],			# combined from original fields: fax3lcc fax faxext
-	[ 'homephone', 		0, qr/^homephone$/ ],	 	# combined from original fields: evephone3lcc evephone eveext
-	[ 'mobilephone3lcc', 	0, qr/^mobilephone3lcc$/ ],
-	[ 'mobilephone', 	0, qr/^mobilephone$/ ],
-	[ 'mobileext', 		0, qr/^mobileext$/ ],
-	[ 'cardholder', 	0, qr/^ccname$/,		{ type_out => 'creditcard' } ],
-	[ 'ccnum', 		0, qr/^ccnum$/,			{ type_out => 'creditcard',	as_title => sub {return 'Credit Card ending ' . last4($_[0]->{'value'})} } ],
-	[ 'validFrom', 		0, qr/^ccstart$/,		{ type_out => 'creditcard',	func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
-	[ 'expiry', 		0, qr/^ccexp$/,			{ type_out => 'creditcard',	func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
-	[ 'cvv', 		0, qr/^cccsc$/,			{ type_out => 'creditcard' } ],
-	[ 'ccissuenum', 	0, qr/^ccissuenum$/,		{ type_out => 'creditcard' } ],
-	[ 'bankName', 		0, qr/^bankname$/,		{ type_out => 'bankacct',	as_title => sub {return $_[0]->{'value'}} } ],
-	[ 'accountNo', 		0, qr/^bankacctnum$/,		{ type_out => 'bankacct',	to_title => sub {return ' (' . last4($_[0]->{'value'}) . ')'} } ],
-	[ 'routingNo', 		0, qr/^bankroutingnum$/,	{ type_out => 'bankacct' } ],
-	[ 'customfield1text', 	0, qr/^customfield1text$/ ],
-	[ 'customfield1value', 	0, qr/^customfield1value$/ ],
-	[ 'customfield1alttext',0, qr/^customfield1alttext$/ ],
-	[ 'customfield2text', 	0, qr/^customfield2text$/ ],
-	[ 'customfield2value', 	0, qr/^customfield2value$/ ],
-	[ 'customfield2alttext',0, qr/^customfield2alttext$/ ],
-	[ 'customfield3text', 	0, qr/^customfield3text$/ ],
-	[ 'customfield3value', 	0, qr/^customfield3value$/ ],
-	[ 'customfield3alttext',0, qr/^customfield3alttext$/ ],
-	[ 'customfield4text', 	0, qr/^customfield4text$/ ],
-	[ 'customfield4value', 	0, qr/^customfield4value$/ ],
-	[ 'customfield4alttext',0, qr/^customfield4alttext$/ ],
-	[ 'customfield5text', 	0, qr/^customfield5text$/ ],
-	[ 'customfield5value', 	0, qr/^customfield5value$/ ],
-	[ 'customfield5alttext',0, qr/^customfield5alttext$/ ],
+	[ 'county', 		0, 'county' ],
+	[ 'state_name', 	0, 'state_name' ],
+	[ 'country_cc3l', 	0, 'country_cc3l' ],
+	[ 'country_name', 	0, 'country_name' ],
+	[ 'timezone', 		0, 'timezone' ],
+	[ 'email', 		0, 'email' ],
+	[ 'cellphone', 		0, 'cellphone' ],	# combined from original fields: mobilephone3lcc mobilephone mobileext
+	[ 'defphone', 		0, 'defphone' ],	# combined from original fields: phone3lcc phone phoneext
+	[ 'fax', 		0, 'fax' ],		# combined from original fields: fax3lcc fax faxext
+	[ 'homephone', 		0, 'homephone' ], 	# combined from original fields: evephone3lcc evephone eveext
+	[ 'mobilephone3lcc', 	0, 'mobilephone3lcc' ],
+	[ 'mobilephone', 	0, 'mobilephone' ],
+	[ 'mobileext', 		0, 'mobileext' ],
+	[ 'cardholder', 	0, 'ccname',		{ type_out => 'creditcard' } ],
+	[ 'ccnum', 		0, 'ccnum',		{ type_out => 'creditcard',	as_title => sub {return 'Credit Card ending ' . last4($_[0]->{'value'})} } ],
+	[ 'validFrom', 		0, 'ccstart',		{ type_out => 'creditcard',	func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
+	[ 'expiry', 		0, 'ccexp',		{ type_out => 'creditcard',	func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
+	[ 'cvv', 		0, 'cccsc',		{ type_out => 'creditcard' } ],
+	[ 'ccissuenum', 	0, 'ccissuenum',	{ type_out => 'creditcard' } ],
+	[ 'bankName', 		0, 'bankname',		{ type_out => 'bankacct',	as_title => sub {return $_[0]->{'value'}} } ],
+	[ 'accountNo', 		0, 'bankacctnum',	{ type_out => 'bankacct',	to_title => sub {return ' (' . last4($_[0]->{'value'}) . ')'} } ],
+	[ 'routingNo', 		0, 'bankroutingnum',	{ type_out => 'bankacct' } ],
+	[ 'customfield1text', 	0, 'customfield1text' ],
+	[ 'customfield1value', 	0, 'customfield1value' ],
+	[ 'customfield1alttext',0, 'customfield1alttext' ],
+	[ 'customfield2text', 	0, 'customfield2text' ],
+	[ 'customfield2value', 	0, 'customfield2value' ],
+	[ 'customfield2alttext',0, 'customfield2alttext' ],
+	[ 'customfield3text', 	0, 'customfield3text' ],
+	[ 'customfield3value', 	0, 'customfield3value' ],
+	[ 'customfield3alttext',0, 'customfield3alttext' ],
+	[ 'customfield4text', 	0, 'customfield4text' ],
+	[ 'customfield4value', 	0, 'customfield4value' ],
+	[ 'customfield4alttext',0, 'customfield4alttext' ],
+	[ 'customfield5text', 	0, 'customfield5text' ],
+	[ 'customfield5value', 	0, 'customfield5value' ],
+	[ 'customfield5alttext',0, 'customfield5alttext' ],
     ]},
-    insurance => 		{ textname => undef, type_out => 'membership', fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Insurance)(?:\x{0a}|\Z)/ms ],
-	[ 'org_name',		0, qr/^(Company):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'poltype',		0, qr/^(Policy Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'polid',		0, qr/^(Policy Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'expiry_date',	0, qr/^(Expiration):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
-	[ 'agentname',		0, qr/^(Agent Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'phone',		0, qr/^(Agent Phone):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'website',		0, qr/^(URL):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    insurance => 		{ textname => 'Insurance', type_out => 'membership', fields => [
+	[ 'org_name',		0, 'Company' ],
+	[ 'poltype',		0, 'Policy Type',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'policy type' ] } ],
+	[ 'polid',		0, 'Policy Number',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'policy ID' ] } ],
+	[ 'expiry_date',	0, 'Expiration',	{ func => sub {return date2monthYear($_[0], 2)}, keep => 1 } ],
+	[ 'agentname',		0, 'Agent Name',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'agent name' ] } ],
+	[ 'phone',		0, 'Agent Phone' ],
+	[ 'website',		0, 'URL' ],
     ]},
-    instantmessage => 		{ textname => undef, type_out => 'login', fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Instant Messenger)(?:\x{0a}|\Z)/ms ],
-	[ 'imtype',		0, qr/^(Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'username',		0, qr/^(Username):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'password',		0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'url',		0, qr/^(Server):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'import',		0, qr/^(Port):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+
+    instantmessage => 		{ textname => 'Instant Messenger', type_out => 'login', fields => [
+	[ 'imtype',		0, 'Type' ],
+	[ 'username',		0, 'Username' ],
+	[ 'password',		0, 'Password' ],
+	[ 'url',		0, 'Server' ],
+	[ 'import',		0, 'Port' ],
     ]},
-    login => 			{ textname => undef, fields => [			# special handling
-	[ 'cardtype',		0, undef ],
-	[ 'username',		0, qr/^username$/ ],
-	[ 'password',		0, qr/^password$/ ],
-	[ 'url',		0, qr/^url$/ ],
+    login => 			{ textname => undef, fields => [	# special handling
+	[ 'username',		0, 'username' ],
+	[ 'password',		0, 'password' ],
+	[ 'url',		0, 'url' ],
     ]},
-    note => undef,									# special handling
-    membership => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Membership)(?:\x{0a}|\Z)/ms ],
-	[ 'org_name',		0, qr/^(Organization):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'membership_no',	0, qr/^(Membership Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'member_name',	0, qr/^(Member Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'member_since',	0, qr/^(Start Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2) }, keep => 1 } ],
-	[ 'expiry_date',	0, qr/^(Expiration):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ func => sub {return date2monthYear($_[0], 2) }, keep => 1 } ],
-	[ 'website',		0, qr/^(Website):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'phone',		0, qr/^(Telephone):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'pin',		0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    note => undef,							# special handling
+    membership => 		{ textname => 'Membership', fields => [
+	[ 'org_name',		0, 'Organization' ],
+	[ 'membership_no',	0, 'Membership Number' ],
+	[ 'member_name',	0, 'Member Name' ],
+	[ 'member_since',	0, 'Start Date',	{ func => sub {return date2monthYear($_[0], 2) }, keep => 1 } ],
+	[ 'expiry_date',	0, 'Expiration',	{ func => sub {return date2monthYear($_[0], 2) }, keep => 1 } ],
+	[ 'website',		0, 'Website' ],
+	[ 'phone',		0, 'Telephone' ],
+	[ 'pin',		0, 'Password' ],
     ]},
-    passport => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Passport)(?:\x{0a}|\Z)/ms ],
-	[ 'type',		0, qr/^(Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'fullname',		0, qr/^(Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'issuing_country',	0, qr/^(Country):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'number',		0, qr/^(Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sex',		0, qr/^(Sex):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'nationality',	0, qr/^(Nationality):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'issuing_authority',	0, qr/^(Issuing Authority):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'birthdate',		0, qr/^(Date of Birth):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,   { func => sub {return date2epoch($_[0], -1)} } ],
-	[ 'issue_date',		0, qr/^(Issued Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms,     { func => sub {return date2epoch($_[0], -1)} } ],
-	[ 'expiry_date',	0, qr/^(Expiration Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms, { func => sub {return date2epoch($_[0],  2)} } ],
+    passport => 		{ textname => 'Passport', fields => [
+	[ 'type',		0, 'Type' ],
+	[ 'fullname',		0, 'Name' ],
+	[ 'issuing_country',	0, 'Country' ],
+	[ 'number',		0, 'Number' ],
+	[ 'sex',		0, 'Sex' ],
+	[ 'nationality',	0, 'Nationality' ],
+	[ 'issuing_authority',	0, 'Issuing Authority' ],
+	[ 'birthdate',		0, 'Date of Birth',	{ func => sub {return date2epoch($_[0], -1)} } ],
+	[ 'issue_date',		0, 'Issued Date',	{ func => sub {return date2epoch($_[0], -1)} } ],
+	[ 'expiry_date',	0, 'Expiration Date',	{ func => sub {return date2epoch($_[0],  2)} } ],
     ]},
-    server => 			{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Server)(?:\x{0a}|\Z)/ms ],
-	[ 'url',		0, qr/^(Hostname):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'username',		0, qr/^(Username):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'password',		0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    server => 			{ textname => 'Server', fields => [
+	[ 'url',		0, 'Hostname' ],
+	[ 'username',		0, 'Username' ],
+	[ 'password',		0, 'Password' ],
     ]},
-    socialsecurity => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Social Security)(?:\x{0a}|\Z)/ms ],
-	[ 'name',		0, qr/^(Name):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'number',		0, qr/^(Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    socialsecurity => 		{ textname => 'Social Security', fields => [
+	[ 'name',		0, 'Name' ],
+	[ 'number',		0, 'Number' ],
     ]},
-    software => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Software License)(?:\x{0a}|\Z)/ms ],
-	[ 'reg_code',		0, qr/^(License Key):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'product_version',	0, qr/^(Version):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'publisher_name',	0, qr/^(Publisher):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'support_email',	0, qr/^(Support Email):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'publisher_website',	0, qr/^(Website):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'retail_price',	0, qr/^(Price):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'order_date',		0, qr/^(Purchase Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms, { func => sub {return date2epoch($_[0], 2)} } ],
-	[ 'order_number',	0, qr/^(Order Number):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'nlicenses',		0, qr/^(Number of Licenses):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'order_total',	0, qr/^(Order Total):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    software => 		{ textname => 'Software License', fields => [
+	[ 'reg_code',		0, 'License Key' ],
+	[ 'product_version',	0, 'Version' ],
+	[ 'publisher_name',	0, 'Publisher' ],
+	[ 'support_email',	0, 'Support Email' ],
+	[ 'publisher_website',	0, 'Website' ],
+	[ 'retail_price',	0, 'Price' ],
+	[ 'order_date',		0, 'Purchase Date',	{ func => sub {return date2epoch($_[0], 2)} } ],
+	[ 'order_number',	0, 'Order Number' ],
+	[ 'nlicenses',		0, 'Number of Licenses',{ custfield => [ $Utils::PIF::sn_order,	$Utils::PIF::k_string, 'number of licenses' ] } ],
+	[ 'order_total',	0, 'Order Total' ],
     ]},
-    sshkey => 			{ textname => undef, type_out => 'server', fields => [
-	[ 'cardtype',		0, qr/^NoteType:(SSH Key)(?:\x{0a}|\Z)/ms ],
-	[ 'sshbitstrength',	0, qr/^(Bit Strength):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sshformat',		0, qr/^(Format):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sshpassphrase',	0, qr/^(Passphrase):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sshprivkey',		0, qr/^(Private Key):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sshpubkey',		0, qr/^(Public Key):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'admnin_console_url',	0, qr/^(Hostname):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'sshdate',		0, qr/^(Date):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    sshkey => 			{ textname => 'SSH Key', type_out => 'server', fields => [
+	[ 'sshbitstrength',	0, 'Bit Strength',	{ custfield => [ 'server.SSH Info', $Utils::PIF::k_string, 'bit strength' ] } ],
+	[ 'sshformat',		0, 'Format',		{ custfield => [ 'server.SSH Info', $Utils::PIF::k_string, 'format' ] } ],
+	[ 'sshpassphrase',	0, 'Passphrase',	{ custfield => [ 'server.SSH Info', $Utils::PIF::k_concealed, 'passphrase' ] } ],
+	[ 'sshprivkey',		0, 'Private Key',	{ custfield => [ 'server.SSH Info', $Utils::PIF::k_concealed, 'private key' ] } ],
+	[ 'sshpubkey',		0, 'Public Key',	{ custfield => [ 'server.SSH Info', $Utils::PIF::k_string, 'public key' ] } ],
+	[ 'admnin_console_url',	0, 'Hostname' ],
+	[ 'sshdate',		0, 'Date',		{ custfield => [ 'server.SSH Info', $Utils::PIF::k_string, 'date' ] } ],
     ]},
-    wireless => 		{ textname => undef, fields => [
-	[ 'cardtype',		0, qr/^NoteType:(Wi-Fi Password)(?:\x{0a}|\Z)/ms ],
-	[ 'network_name',	0, qr/^(SSID):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_password',	0, qr/^(Password):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_conntype',	0, qr/^(Connection Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_connmode',	0, qr/^(Connection Mode):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_auth',	0, qr/^(Authentication):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_encrypt',	0, qr/^(Encryption):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_use8201x',	0, qr/^(Use 802\.1X):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_fipsmode',	0, qr/^(FIPS Mode):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_keytype',	0, qr/^(Key Type):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_protected',	0, qr/^(Protected):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'wireless_keyindex',	0, qr/^(Key Index):([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+    wireless => 		{ textname => 'Wi-Fi Password', fields => [
+	[ 'network_name',	0, 'SSID' ],
+	[ 'wireless_password',	0, 'Password' ],
+	[ 'wireless_conntype',	0, 'Connection Type' ],
+	[ 'wireless_connmode',	0, 'Connection Mode' ],
+	[ 'wireless_auth',	0, 'Authentication' ],
+	[ 'wireless_encrypt',	0, 'Encryption' ],
+	[ 'wireless_use8201x',	0, 'Use 802.1X' ],
+	[ 'wireless_fipsmode',	0, 'FIPS Mode' ],
+	[ 'wireless_keytype',	0, 'Key Type' ],
+	[ 'wireless_protected',	0, 'Protected' ],
+	[ 'wireless_keyindex',	0, 'Key Index' ],
     ]},
 );
 
@@ -295,11 +276,10 @@ sub do_import {
 
     my (%Cards, %saved_ssns);;
     my ($n, $rownum) = (1, 1);
-    my ($npre_explode, $npost_explode);
     while (my $hr = $csv->getline_hr($io)) {
 	debug 'ROW: ', $rownum++;
 
-	my ($itype, $card_title, $card_notes, @card_tags, @card_folder, @fieldlist);
+	my ($itype, %cmeta, @fieldlist);
 
 	# Switch on the form of CSV export:
 	#    - standard entries (LastPass CSV File)
@@ -314,12 +294,12 @@ sub do_import {
 	    # Field 'extra' contains lines of specific secure notes label:value pairs
 	    # Secure notes types will have URL = "http://sn"
 
-	    $card_title =  $hr->{'name'};
-	    $card_notes =  $hr->{'extra'};
-	    push @card_tags, 'Favorite'		if $hr->{'fav'} == 1;
+	    $cmeta{'title'} =  $hr->{'name'};
+	    $cmeta{'notes'} =  $hr->{'extra'};
+	    push @{$cmeta{'tags'}}, 'Favorite'		if $hr->{'fav'} == 1;
 	    if ($hr->{'grouping'} ne '(none)' and $hr->{'grouping'} ne '') {
-		push @card_tags, $hr->{'grouping'};
-		@card_folder = split /\\/, $hr->{'grouping'};
+		push @{$cmeta{'tags'}}, $hr->{'grouping'};
+		@{$cmeta{'folder'}} = split /\\/, $hr->{'grouping'};
 	    }
 
 	    if ($hr->{'url'} ne 'http://sn') {
@@ -329,20 +309,27 @@ sub do_import {
 		}
 	    }
 	    else {
-		$itype = pull_fields_from_note(\@fieldlist, \$card_notes);
+		$itype = pull_fields_from_note(\@fieldlist, \$cmeta{'notes'});
 	    }
+	    debug "\t\ttype determined as '$itype'";
+	    # skip all types not specifically included in a supplied import types list
+	    next if defined $imptypes and (! exists $imptypes->{$itype});
 	}
 	# Form Fill profiles will map to one or more 1P4 types:
 	#    Identity, Credit Card, Bank Account, and Social Security Number
 	else {
-	    $itype = 'identity';
 	    # LastPass Form Fill Profiles export 
+
+	    $itype = 'identity';
+	    debug "\t\ttype determined as '$itype'";
+	    # skip all types not specifically included in a supplied import types list
+	    next if defined $imptypes and (! exists $imptypes->{$itype});
 	    
 	    my $fullname = join ' ', $hr->{'firstname'}, $hr->{'lastname'};
-	    $card_title = $fullname;
+	    $cmeta{'title'} = $fullname;
 
-	    $card_notes = 'Form Fill Profile: ' . $hr->{'profilename'};		delete $hr->{'profilename'};
-	    $card_notes .= "\n" . $hr->{'notes'}	if $hr->{'notes'} ne '';	delete $hr->{'notes'};
+	    $cmeta{'notes'} = 'Form Fill Profile: ' . $hr->{'profilename'};		delete $hr->{'profilename'};
+	    $cmeta{'notes'} .= "\n" . $hr->{'notes'}	if $hr->{'notes'} ne '';	delete $hr->{'notes'};
 
 	    $hr->{'ssnfullname'}  = $fullname;
 	    $hr->{'defphone'}	  = join ' ',  grep {$_ ne ''} map {$hr->{$_}} qw/phone3lcc phone phoneext/; 
@@ -366,30 +353,16 @@ sub do_import {
 		}
 	    }
 
-	    for (keys $hr) {
+	    for (keys %$hr) {
 		debug "KEY: $_";
 		push @fieldlist, [ $_ => $hr->{$_} ]		if defined $hr->{$_} and $hr->{$_} ne '';
 	    }
 	}
 
-	debug "\t\ttype determined as '$itype'";
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# skip all types not specifically included in a supplied import types list
-	next if defined $imptypes and (! exists $imptypes->{$itype});
-
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $card_title, \@card_tags, \$card_notes, \@card_folder);
-
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
@@ -399,113 +372,28 @@ sub do_import {
 	warn "Unexpected failure parsing CSV: row $n";
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-
-    add_new_field('driverslicense',  'city',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'city / town');
-    add_new_field('driverslicense',  'zip',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'zip / postal code');
-
-    add_new_field('membership',      'poltype',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'policy type');
-    add_new_field('membership',      'polid',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'policy ID');
-    add_new_field('membership',      'grpid',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'group ID');
-    add_new_field('membership',      'agentname',	$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'agent name');
-
-    add_new_field('server',          'sshbitstrength',	'server.SSH Info',	$Utils::PIF::k_string,    'bit strength');
-    add_new_field('server',          'sshformat',	'server.SSH Info',	$Utils::PIF::k_string,    'format');
-    add_new_field('server',          'sshpassphrase',	'server.SSH Info',	$Utils::PIF::k_concealed, 'passphrase');
-    add_new_field('server',          'sshprivkey',	'server.SSH Info',	$Utils::PIF::k_concealed, 'private key');
-    add_new_field('server',          'sshpubkey',	'server.SSH Info',	$Utils::PIF::k_string,    'public key');
-    add_new_field('server',          'sshdate',		'server.SSH Info',	$Utils::PIF::k_string,    'date');
-
-    add_new_field('software',        'nlicenses',	$Utils::PIF::sn_order,	$Utils::PIF::k_string,    'number of licenses');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards;
-    $norm_cards{'title'}   = $title	if $title ne '';
-    $norm_cards{'tags'}    = $tags;
-    $norm_cards{'folder'}  = $folder;
-    $norm_cards{'notes'}   = $$notesref;
-
-    #[1..$#$defs#]
-    my $defs = $card_field_specs{$type}{'fields'};
-    for my $def (@{$defs}[1..$#$defs]) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    # Patterns in %card_field_specs are used to match inside a note, so create a
-	    # key:value string that will allow the RE to match, except for the special case
-	    # login and identity types.
-	    my $pat = $type =~ /^login|identity$/ ? $inkey : join ':', $inkey, $value;
-
-	    if ($def->[2] and $pat =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		for (qw/as_title to_title/) {
-		    if (exists $def->[3]{$_}) {
-			$h->{$_}	= ref $def->[3]{$_} eq 'CODE' ? $def->[3]->{$_}($h) : $h->{$def->[3]{$_}}
-		    }
-		}
-		push @{$norm_cards{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
-    }
-
-    return \%norm_cards;
-}
 sub pull_fields_from_note {
     my ($fieldlist, $notes) = @_;
 
-    for my $type (keys %card_field_specs) {
-	my $defs = $card_field_specs{$type}{'fields'};
+    return 'note'	if $$notes !~ /^NoteType/;
 
-	next if !defined $defs;		# XXX
+    for my $type (keys %card_field_specs) {
+	my $cfs = $card_field_specs{$type};
+	my $fields = $cfs->{'fields'};
 
 	# the first entry in the note indicates the note type (e.g. NoteType:Bank Account)
-	if ($defs->[0][2] and $$notes =~ s/$defs->[0][2]//ms) {
-	    for (@{$defs}[1..$#$defs]) {
-		if ($$notes =~ s/$_->[2]//ms) {
+	if ($cfs->{'textname'} and $$notes =~ s/^NoteType:($cfs->{'textname'})(?:\x{0a}|\Z)//ms) {
+	    for (@$fields) {
+		if ($$notes =~ s/^($_->[2]):([^\x{0a}]+)(?:\x{0a}|\Z)//ms) {
 		    my ($label, $val) = ($1, $2);
 		    push @$fieldlist, [ $label => $val ];		# maintains original order
 		}
@@ -516,7 +404,6 @@ sub pull_fields_from_note {
 
     return 'note';
 }
-
 
 # input conversion routines
 #
@@ -530,34 +417,6 @@ sub bankstrconv {
     return  'other';
 }
 
-=cut
-sub old_date2monthYear {
-    # input form: 2014-12-01
-    local $_ = shift;
-
-    if (/(^\d{4}+)-(\d{2})-01$/) {
-	if (check_date($1, $2, 1)) {	# y, m, d
-	    return $1 . sprintf("%02d", $2);
-	}
-    }
-
-    return undef;
-}
-
-sub birthdayconv {
-    # input form: 1964-02-28
-    local $_ = shift;
-
-    if (/(^\d{4}+)-(\d{2})-(\d{2})$/) {
-	if (check_date($1, $2, $3)) {	# y, m, d
-	    return timelocal(0,0,0,$3,$2 - 1,$1);
-	}
-    }
-
-    return undef;
-}
-=cut
-
 # Date converters
 # lastpass dates: month,d,yyyy   month,yyyy   yyyy-mm-dd
 sub parse_date_string {
@@ -565,15 +424,16 @@ sub parse_date_string {
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
 
     if (/^(?<m>[^,]+),(?:(?<d>\d{1,2}),)?(?<y>\d{4})$/ or	# month,d,yyyy or month,yyyy
-	/^(?<y>\d{4}+)-(?<m>\d{2})-(?<d>\d{2})$/) { 		# yyyy-mm-dd
+	/^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})$/) { 		# yyyy-mm-dd
 	my $days_today = Date_to_Days(@today);
 
 	my $d_present = exists $+{'d'};
 	my $d = sprintf "%02d", $+{'d'} // "1";
 	my $m = $+{'m'};
-	my $y = $+{'y'};
+	my $origy = $+{'y'};
 	$m = sprintf "%02d", $m !~ /^\d{1,2}$/ ? Decode_Month($m) : $m;
 	for my $century (qw/20 19/) {
+	    my $y = $origy;
 	    if (length $y eq 2) {
 		$y = sprintf "%d%02d", $century, $y;
 		$y = Moving_Window($y)	if $when == 2;
@@ -596,11 +456,11 @@ sub date2monthYear {
 
 sub date2epoch {
     my ($y, $m, $d) = parse_date_string @_;
-    return defined $y ? timelocal(0, 0, 0, $d, $m - 1, $y): $_[0];
+    return defined $y ? timelocal(0, 0, 3, $d, $m - 1, $y): $_[0];
 }
 
 sub last4 {
-    my $_ = shift;
+    local $_ = shift;
     s/[- ._:]//;
     /(.{4})$/;
     return $1;

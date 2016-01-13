@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Safeincloud 1.01;
+package Converters::Safeincloud 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use XML::XPath;
 use XML::XPath::XMLParser;
 
@@ -93,17 +95,11 @@ sub do_init {
 sub do_import {
     my ($file, $imptypes) = @_;
 
-    {
-	local $/ = undef;
-	open my $fh, '<', $file or bail "Unable to open file: $file\n$!";
-	$_ = <$fh>;
-	s!<br/>!\n!g;
-	close $fh;
-    }
+    $_ = slurp_file($file);
+    s!<br/>!\n!g;
 
     my %Cards;
     my $n = 1;
-    my ($npre_explode, $npost_explode);
 
     my %labels;
     my $xp = XML::XPath->new(xml => $_);
@@ -115,11 +111,11 @@ sub do_import {
 
 	my $cardnodes = $xp->find('card', $nodes);
 	foreach my $cardnode ($cardnodes->get_nodelist) {
-	    my (@fieldlist, @card_tags, $card_note, $card_modified);
+	    my (%cmeta, @fieldlist);
 
 	    next if $cardnode->getAttribute('template') eq 'true';
-	    my $card_title = $cardnode->getAttribute('title');
-	    debug "Card: ", $card_title;
+	    $cmeta{'title'} = $cardnode->getAttribute('title');
+	    debug "Card: ", $cmeta{'title'};
 
 	    my $cardelements = $xp->find('field|label_id|notes', $cardnode);
 	    foreach my $cardelement ($cardelements->get_nodelist) {
@@ -128,12 +124,12 @@ sub do_import {
 		    debug "\t\t$fieldlist[-1][0]: $fieldlist[-1][1]";
 		}
 		elsif ($cardelement->getName() eq 'label_id') {
-		    push @card_tags, $labels{$cardelement->string_value};
-		    debug "\t\tLabel: $card_tags[-1]";
+		    push @{$cmeta{'tags'}}, $labels{$cardelement->string_value};
+		    debug "\t\tLabel: $cmeta{'tags'}[-1]";
 		}
 		elsif ($cardelement->getName() eq 'notes') {
-		    $card_note  = $cardelement->string_value;
-		    debug "\t\tnotes: $card_note";
+		    $cmeta{'notes'}  = $cardelement->string_value;
+		    debug "\t\tnotes: $cmeta{'notes'}";
 		}
 		else {
 		    bail 'Unexpected XPath type encountered: ', $cardelement->getName();
@@ -142,9 +138,9 @@ sub do_import {
 
 	    my $icon = $cardnode->getAttribute('symbol');
 	    push @fieldlist, [ Color  => $cardnode->getAttribute('color') ];
-	    push @card_tags, 'Stared'	if $cardnode->getAttribute('star') eq 'true';
+	    push @{$cmeta{'tags'}}, 'Stared'	if $cardnode->getAttribute('star') eq 'true';
 	    if ($main::opts{'modified'}) {
-		$card_modified =	date2epoch($cardnode->getAttribute('time_stamp'));
+		$cmeta{'modified'} =	date2epoch($cardnode->getAttribute('time_stamp'));
 	    }
 
 	    my $itype = find_card_type(\@fieldlist, $icon);
@@ -152,23 +148,10 @@ sub do_import {
 	    # skip all types not specifically included in a supplied import types list
 	    next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	    # From the card input, place it in the converter-normal format.
-	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \@fieldlist, 
-		{ title		=> $card_title,
-		  tags		=> \@card_tags,
-		  notes		=> $card_note // '',
-		  modified	=> $card_modified });
+	    my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	    my $cardlist   = explode_normalized($itype, $normalized);
 
-	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	    my $cardlist = explode_normalized($itype, $normalized);
-
-	    my @k = keys %$cardlist;
-	    if (@k > 1) {
-		$npre_explode++; $npost_explode += @k;
-		debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	    }
-	    for (@k) {
+	    for (keys %$cardlist) {
 		print_record($cardlist->{$_});
 		push @{$Cards{$_}}, $cardlist->{$_};
 	    }
@@ -176,13 +159,12 @@ sub do_import {
 	}
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -192,11 +174,11 @@ sub find_card_type {
     my $type;
 
     for $type (sort by_test_order keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	    next unless $def->[1] and defined $def->[2];
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
+	    next unless $cfs->[CFS_TYPEHINT] and defined $cfs->[CFS_MATCHSTR];
 	    for (@$fieldlist) {
 		# type hint
-		if ($_->[0] =~ $def->[2]) {
+		if ($_->[0] =~ $cfs->[CFS_MATCHSTR]) {
 		    debug "\ttype detected as '$type' (key='$_->[0]')";
 		    return $type;
 		}
@@ -215,64 +197,6 @@ sub find_card_type {
 
     debug "\ttype defaulting to '$type'";
     return $type;
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 # sort logins as the last to check

@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Csv 1.01;
+package Converters::Csv 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Text::CSV;
 
 my %card_field_specs = (
@@ -28,6 +30,7 @@ my %card_field_specs = (
 	[ 'username',		1, qr/^username$/i, ],
 	[ 'password',		1, qr/^password$/i, ],
 	[ 'notes',		0, qr/^notes$/i, ],
+	[ 'tags',		0, qr/^tags$/i, ],
     ]},
     note =>			{ textname => '', fields => [
     ]},
@@ -35,10 +38,12 @@ my %card_field_specs = (
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
+my $custom_field_num = 1;
+
 sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
-	'imptypes'  	=> qw/userdefined/,
+	'imptypes'  	=> undef,
         'opts'          => [],
     }
 }
@@ -50,7 +55,7 @@ sub do_import {
 	    binary => 1,
 	    allow_loose_quotes => 0,
 	    sep_char => ',',
-	    eol => "\x{0d}\x{0a}",
+	    #eol => "\x{0d}\x{0a}",
     });
 
     open my $io, "<:encoding(utf8)", $file
@@ -73,56 +78,36 @@ sub do_import {
 	bail "CSV column names do not match expected names";
 
     # grab and remove the special field column names
-    for (sort { $b <=> $a } values $col_names_to_pos) {
+    for (sort { $b <=> $a } values %$col_names_to_pos) {
 	splice @$column_names, $_, 1;
-    }
-
-    my $i = 1;
-    for (@$column_names) {
-	next if /^title|url|username|password|notes$/;
-	my $col_name = sprintf "_%s_%d", $_, $i;
-	add_new_field('login',        $col_name,	  'other.Other Information',$Utils::PIF::k_string, $_);
-	push @{$card_field_specs{$itype}{'fields'}}, [ $col_name, 0, qr/^\Q$_\E$/i ];
-	$i++;
     }
 
     my %Cards;
     my ($n, $rownum) = (1, 1);
-    my ($npre_explode, $npost_explode);
 
     while (my $row = $csv->getline($io)) {
 	debug 'ROW: ', $rownum++;
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	my (@fieldlist, %hr);
+	my (@fieldlist, %cmeta);
 	# save the special fields to pass to normalize_card_data below, and then remove them from the row.
 	for (keys %$col_names_to_pos) {
-	    $hr{$_} = $row->[$col_names_to_pos->{$_}];
+	    $cmeta{$_} = $_ eq 'tags' ? [ split(/\s*,\s*/, $row->[$col_names_to_pos->{$_}]) ] :  $row->[$col_names_to_pos->{$_}];
 	}
 	# remove the special field values
-	for (sort { $b <=> $a } values $col_names_to_pos) {
+	for (sort { $b <=> $a } values %$col_names_to_pos) {
 	    splice @$row, $_, 1;
 	}
 
 	# everything that remains in the row is the field data
 	for (my $i = 0; $i <= $#$column_names; $i++) {
-	    debug "\tcust field: $column_names->[$i] => $row->[$i]";
 	    push @fieldlist, [ $column_names->[$i] => $row->[$i] ];		# retain field order
 	}
 
-	# From the card input, place it in the converter-normal format.
-	# The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	my $normalized = normalize_card_data($itype, \@fieldlist, $hr{'title'}, undef, \$hr{'notes'}, undef);
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
@@ -132,72 +117,13 @@ sub do_import {
 	warn "Unexpected failure parsing CSV: row $n";
     }
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Place card data into normalized internal form.
-# per-field normalized hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $title, $tags, $notesref, $folder, $postprocess) = @_;
-    my %norm_cards = (
-	title	=> $title,
-	notes	=> $$notesref,
-	tags	=> $tags,
-	folder	=> $folder,
-    );
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards{'notes'} .= "\n"	if defined $norm_cards{'notes'} and length $norm_cards{'notes'} > 0;
-	$norm_cards{'notes'} .= join ': ', @$_;
-    }
-
-    return \%norm_cards;
 }
 
 sub find_card_type {
@@ -206,11 +132,11 @@ sub find_card_type {
     my %col_names_to_pos;
 
     for my $type (keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 	    for (my $i = 0; $i <= $#$row; $i++) {
-		if (defined $def->[2] and $row->[$i] =~ /$def->[2]/ms) {
-		    $otype = $type	 			if $def->[1];		# type hint
-		    $col_names_to_pos{$def->[0]} = $i		if $def->[0] =~ /^title|notes$/;
+		if (defined $cfs->[CFS_MATCHSTR] and $row->[$i] =~ /$cfs->[CFS_MATCHSTR]/ms) {
+		    $otype = $type	 			if $cfs->[CFS_TYPEHINT];
+		    $col_names_to_pos{$cfs->[CFS_FIELD]} = $i	if $cfs->[CFS_FIELD] =~ /^title|notes|tags$/;
 		}
 	    }
 	}

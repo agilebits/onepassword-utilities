@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keychain 1.02;
+package Converters::Keychain 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -17,9 +17,11 @@ use warnings;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
-use Encode;
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin unfold_and_chop print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
+use Encode;
 use Time::Local qw(timelocal);
 use Time::Piece;
 
@@ -70,6 +72,7 @@ my @rules = (
 		{ c => sub { $_[0] =~ s/^<NULL>$// } },
     ],
     ptcl => [
+		{ c => sub { $_[0] =~ s/0x00000000 // } },
 		{ c => sub { $_[0] =~ s/htps/https/ } },
 		{ c => sub { $_[0] =~ s/^"(\S+)\s*"$/$1/ } },
     ],
@@ -117,17 +120,10 @@ sub do_init {
 sub do_import {
     my ($file, $imptypes) = @_;
     my (%Cards, %dup_check);
-    my $contents = $_;;
 
-    {
-	local $/;
-	open my $fh, '<:encoding(utf8)', $file or bail "Unable to open file: $file\n$!";
-	$contents = <$fh>;
-	close $fh;
-    }
+    my $contents = slurp_file($file, 'utf8');
 
     my ($n, $examined, $skipped, $duplicates) = (1, 0, 0, 0);
-    my ($npre_explode, $npost_explode);
 
 KEYCHAIN_ENTRY:
     while ($contents) {
@@ -197,18 +193,21 @@ RULE:
 
 	    #my $itype = find_card_type(\%entry);
 
-	    my %h;
-	    my ($notes, $card_modified);
+	    my (%h, @fieldlist, %cmeta);
 	    if ($itype eq 'login') {
 		$h{'password'}	= $entry{'DATA'};
 		$h{'username'}	= $entry{'acct'}						if exists $entry{'acct'};
-		$h{'url'}	= $entry{'ptcl'} . '://' . $entry{'srvr'} . $entry{'path'}	if exists $entry{'srvr'};
+		if (exists $entry{'srvr'}) {
+		    $h{'url'}	= $entry{'srvr'};
+		    $h{'url'}	= $entry{'ptcl'} . '://' . $h{'url'}				if $entry{'ptcl'} ne '';
+		    $h{'url'}  .= $entry{'path'}						if $entry{'path'} ne '';
+		}
 	    }
 	    elsif ($itype eq 'note') {
 		# convert ascii string DATA, which contains \### octal escapes, into UTF-8
 		my $octets = encode("ascii", $entry{'DATA'});
 		$octets =~ s/\\(\d{3})/"qq|\\$1|"/eeg;
-		$notes = decode("UTF-8", $octets);
+		$cmeta{'notes'} = decode("UTF-8", $octets);
 	    }
 	    else {
 		die "Unexpected itype: $itype";
@@ -219,7 +218,7 @@ RULE:
 	    $h{'created'}	= $entry{'cdat'}					if exists $entry{'cdat'};
 	    if (exists $entry{'mdat'}) {
 		if ($main::opts{'modified'}) {
-		    $card_modified = date2epoch($entry{'mdat'});
+		    $cmeta{'modified'} = date2epoch($entry{'mdat'});
 		}
 		else {
 		    $h{'modified'}	= $entry{'mdat'};
@@ -242,26 +241,14 @@ RULE:
 		next
 	    }
 	    $dup_check{$s}++;
+	    $cmeta{'title'} = $sv;
 
+	    push @fieldlist, [ $_ => $h{$_} ]	for keys %h;
 
-	    # From the card input, place it in the converter-normal format.
-	    # The card input will have matched fields removed, leaving only unmatched input to be processed later.
-	    my $normalized = normalize_card_data($itype, \%h, 
-		{ title		=> $sv,
-		  tags		=> undef,
-		  notes		=> $notes,
-		  folder	=> undef,
-		  modified	=> $card_modified });
+	    my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	    my $cardlist   = explode_normalized($itype, $normalized);
 
-	    # Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	    my $cardlist = explode_normalized($itype, $normalized);
-
-	    my @k = keys %$cardlist;
-	    if (@k > 1) {
-		$npre_explode++; $npost_explode += @k;
-		debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	    }
-	    for (@k) {
+	    for (keys %$cardlist) {
 		print_record($cardlist->{$_});
 		push @{$Cards{$_}}, $cardlist->{$_};
 	    }
@@ -272,17 +259,17 @@ RULE:
 	}
     }
 
-    $n--;
-    verbose "Examined $examined record", pluralize($examined);
-    verbose "Skipped $skipped non-login record", pluralize($skipped);
-    verbose "Skipped $duplicates duplicate record", pluralize($duplicates);
+    verbose "Examined $examined ", pluralize('item', $examined);
+    verbose "Skipped $skipped non-login ", pluralize('item', $skipped);
+    verbose "Skipped $duplicates duplicate ", pluralize('item', $duplicates);
 
-    verbose "Imported $n record", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
+
 sub do_export {
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
 }
 
@@ -292,62 +279,6 @@ sub find_card_type {
     my $type = (exists $eref->{'desc'} and $eref->{'desc'} eq 'secure note') ? 'note' : 'login';
     debug "\t\ttype set to '$type'";
     return $type;
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $carddata, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for my $key (keys %$carddata) {
-	    if ($key =~ /$def->[2]/) {
-		next if not defined $carddata->{$key} or $carddata->{$key} eq '';
-		my ($inkey, $value) = ($key, $carddata->{$key});
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		delete $carddata->{$key};
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"        if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and keys %$carddata;
-    for my $key (keys %$carddata) {
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', $key, $carddata->{$key};
-    }
-
-    return $norm_cards;
 }
 
 # sort logins as the last to check
@@ -376,6 +307,7 @@ sub parse_date_string {
 
 sub date2epoch {
     my $t = parse_date_string @_;
+    return undef if not defined $t;
     return defined $t->year ? 0 + timelocal($t->sec, $t->minute, $t->hour, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 

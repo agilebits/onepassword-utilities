@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Datavault 1.00;
+package Converters::Datavault 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -18,7 +18,9 @@ binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 use Utils::PIF;
-use Utils::Utils qw(verbose debug bail pluralize myjoin print_record);
+use Utils::Utils;
+use Utils::Normalize;
+
 use Text::CSV;
 
 # Some stock templates are essentially duplicated and indistinguishable in the CSV export, and are mapped as follows:
@@ -110,13 +112,13 @@ my %card_field_specs = (
     ]},
     insurance =>		{ textname => '', type_out => 'membership', fields => [
 	[ 'org_name',		0, qr/^Company$/, ],
-	[ '_subscriber_num',	1, qr/^Subscriber #$/, ],
-	[ '_group_num',		1, qr/^Group #$/, ],
+	[ '_subscriber_num',	1, qr/^Subscriber #$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'subscriber #' ] } ],
+	[ '_group_num',		1, qr/^Group #$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group #' ] } ],
 	[ 'membership_no',	0, qr/^Member #$/, ],
-	[ '_plan',		1, qr/^Plan$/, ],
+	[ '_plan',		1, qr/^Plan$/,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'plan' ] } ],
 	[ 'phone',		0, qr/^Telephone$/, ],
 	[ '_physician',		1, qr/^Primary Physician$/, ],
-	[ '_physicianphone',	0, qr/^Telephone$/, ],
+	[ '_physicianphone',	0, qr/^Physicans Telephone$/, ],	# special magic - label modified below to make it unique
     ]},
     login =>			{ textname => '', fields => [
 	[ 'url',		0, qr/^Address$/, ],
@@ -126,7 +128,7 @@ my %card_field_specs = (
     ]},
     membership =>		{ textname => '', fields => [
 	[ 'org_name',		0, qr/^Type$/, ],
-	[ 'membership_no',	1, qr/^Member #$/, ],		# field also present in insurance, but find_card_type() test 'membership' hits late
+	[ 'membership_no',	1, qr/^Member #$/, ],		# field also present in insurance, but find_card_type() tests 'membership' hits late
 	[ '_expiry_date',	0, qr/^Expiration Date$/, ],
 	[ 'phone',		0, qr/^Phone$/, ],
     ]},
@@ -184,48 +186,57 @@ sub do_import {
 
     my $csv = Text::CSV->new ({
 	    binary => 1,
-	    allow_loose_quotes => 1,
-	    escape_char => undef, 
 	    sep_char => ",",
+	    eol => 		  $^O eq 'MSWin32' ? "\x{0d}\x{0a}" : "\n",
+	    # Quoting is correct on DataVault for Windows but not for OS X
+	    allow_loose_quotes => $^O eq 'MSWin32' ? 0 : 1,
+	    escape_char => 	  $^O eq 'MSWin32' ? '"' : undef,
     });
 
-    open my $io, $^O eq 'MSWin32' ? "<:encoding(latin1)" : "<:encoding(utf8)", $file
-	or bail "Unable to open CSV file: $file\n$!";
+    my $data = slurp_file($file, ':raw');
 
-    # The DataVault export, record line endings are 0a (OS X) and 0d 0a (Windows), so we need to convert
-    # intrafield line endings to not conflict with record line endings, for csv->getline():
-    #   OS X:      0d 0a  --> 0d
-    #   Windows 0d 0d 0a  --> 0d
-    {
-	local $/ = undef;
-	my $data = <$io>;
-	if ($^O eq 'darwin') {
-	    $data =~ s/\x{0d}\x{0a}/\x{0d}/gs;
-	}
-	else {
-	    $data =~ s/\x{0d}\x{0a}/\x{0d}/gs;
-	}
-	close $io;
-	open $io,  "<:encoding(utf8)", \$data or
-	    bail "Unable to reopen IO handle as a variable";
+    # In the DataVault export, record line endings are 0a (OS X) and 0d 0a (Windows).  And
+    # the intra-field line endings (e.g. for notes) will cause csv->getline() to misdetect
+    # record boundaries.  So convert intra-field line endings to 0d and patch them later.
+    #
+    if ($^O eq 'darwin') {
+	$data =~ s/\x{0d}\x{0a}/\x{0d}/gs;	# 0d 0a		--> 0d
     }
+    else {
+	$data =~ s/\x{0d}{2}\x{0a}/\x{0d}/gs;	# 0d 0d 0a	--> 0d
+	utf8::encode($data);			# convert latin1 to utf8
+    }
+
+    open my $io,  "<:encoding(utf8)", \$data or
+	bail "Unable to reopen IO handle as a variable";
 
     my %Cards;
     my ($n, $rownum) = (1, 1);
-    my ($npre_explode, $npost_explode);
 
     while (my $row = $csv->getline($io)) {
 	debug 'ROW: ', $rownum++;
 
-	my $card_title = shift @$row;
-	my $card_notes = pop   @$row;
+	my %cmeta;
+	$cmeta{'title'} = shift @$row;
+	$cmeta{'notes'} = pop   @$row;
+
+	# Incorrect quoting alert on DataVault for OS X:
+	#   "mylogin","Address","example.com","Username","joe@example.com","Password",",""secret""stuff""","", ... "","Watch for quoted password"
+	# The password is: ,"secret"stuff"
+	#   correct csv:    ",""secret""stuff"""
+	#   correct win:    ",""secret""stuff"""
+	#   incorrect mac:  ","secret"stuff""
 
 	if (@$row ne 20) {
-	    say "Skipping uncorrectable DataVault CSV quoting problem: record '$card_title'.  You will need to manually add this record to 1Password.";
+	    say "** Skipped entry (uncorrectable CSV quoting problem, ncols=", scalar @$row, ").  Add this record to 1Password manually: '$cmeta{'title'}'";
 	    next;
 	}
+
 	# Everything that remains in the row is the the field data
 	my (@fieldlist, @labels);
+	if ($row->[10] eq 'Telephone' and $row->[14] eq 'Telephone') {
+	    $row->[14] =~ s/Telephone/Physicans Telephone/
+	}
 	for (my $i = 0; $i < 10; $i++) {
 	    my $label = shift @$row;
 	    my $value = shift @$row;
@@ -239,19 +250,10 @@ sub do_import {
 
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	my $normalized = normalize_card_data($itype, \@fieldlist, 
-	    { title	=> $card_title,
-	      notes	=> $card_notes });
+	my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
+	my $cardlist   = explode_normalized($itype, $normalized);
 
-	# Returns list of 1 or more card/type hashes; one input card may explode into multiple output cards
-	my $cardlist = explode_normalized($itype, $normalized);
-
-	my @k = keys %$cardlist;
-	if (@k > 1) {
-	    $npre_explode++; $npost_explode += @k;
-	    debug "\tcard type $itype expanded into ", scalar @k, " cards of type @k"
-	}
-	for (@k) {
+	for (keys %$cardlist) {
 	    print_record($cardlist->{$_});
 	    push @{$Cards{$_}}, $cardlist->{$_};
 	}
@@ -260,88 +262,24 @@ sub do_import {
     if (! $csv->eof()) {
 	warn "Unexpected failure parsing CSV: row $n";
     }
+    close $io;
 
-    $n--;
-    verbose "Imported $n card", pluralize($n) ,
-	$npre_explode ? " ($npre_explode card" . pluralize($npre_explode) .  " expanded to $npost_explode cards)" : "";
+    summarize_import('item', $n - 1);
     return \%Cards;
 }
 
 sub do_export {
-    add_new_field('membership',      '_subscriber_num',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'subscriber #');
-    add_new_field('membership',      '_group_num',		$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'group #');
-    add_new_field('membership',      '_plan',			$Utils::PIF::sn_main,	$Utils::PIF::k_string,    'plan');
-
+    add_custom_fields(\%card_field_specs);
     create_pif_file(@_);
-}
-
-# Places card data into a normalized internal form.
-#
-# Basic card data passed as $norm_cards hash ref:
-#    title
-#    notes
-#    tags
-#    folder
-#    modified
-# Per-field data hash {
-#    inkey	=> imported field name
-#    value	=> field value after callback processing
-#    valueorig	=> original field value
-#    outkey	=> exported field name
-#    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
-#    to_title	=> append title with a value from the narmalized card
-# }
-sub normalize_card_data {
-    my ($type, $fieldlist, $norm_cards) = @_;
-
-    for my $def (@{$card_field_specs{$type}{'fields'}}) {
-	my $h = {};
-	for (my $i = 0; $i < @$fieldlist; $i++) {
-	    my ($inkey, $value) = @{$fieldlist->[$i]};
-	    next if not defined $value or $value eq '';
-
-	    if ($inkey =~ $def->[2]) {
-		my $origvalue = $value;
-
-		if (exists $def->[3] and exists $def->[3]{'func'}) {
-		    #         callback(value, outkey)
-		    my $ret = ($def->[3]{'func'})->($value, $def->[0]);
-		    $value = $ret	if defined $ret;
-		}
-		$h->{'inkey'}		= $inkey;
-		$h->{'value'}		= $value;
-		$h->{'valueorig'}	= $origvalue;
-		$h->{'outkey'}		= $def->[0];
-		$h->{'outtype'}		= $def->[3]{'type_out'} || $card_field_specs{$type}{'type_out'} || $type; 
-		$h->{'keep'}		= $def->[3]{'keep'} // 0;
-		$h->{'to_title'}	= ' - ' . $h->{$def->[3]{'to_title'}}	if $def->[3]{'to_title'};
-		push @{$norm_cards->{'fields'}}, $h;
-		splice @$fieldlist, $i, 1;	# delete matched so undetected are pushed to notes below
-		last;
-	    }
-	}
-    }
-
-    # map remaining keys to notes
-    $norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0 and @$fieldlist;
-    for (@$fieldlist) {
-	next if $_->[1] eq '';
-	$norm_cards->{'notes'} .= "\n"	if defined $norm_cards->{'notes'} and length $norm_cards->{'notes'} > 0;
-	$norm_cards->{'notes'} .= join ': ', @$_;
-    }
-
-    return $norm_cards;
 }
 
 sub find_card_type {
     my $labels = shift;
 
     for my $type (sort by_test_order keys %card_field_specs) {
-	for my $def (@{$card_field_specs{$type}{'fields'}}) {
+	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 	    for (@$labels) {
-		# type hint
-		if ($def->[1] and $_ =~ $def->[2]) {
+		if ($cfs->[CFS_TYPEHINT] and $_ =~ $cfs->[CFS_MATCHSTR]) {
 		    debug "type detected as '$type' (key='$_')";
 		    return $type;
 		}
