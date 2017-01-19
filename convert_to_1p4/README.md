@@ -20,6 +20,7 @@ Keepass 2 | keepass2 | importing | Windows: 2.26
 KeePassX | keepassx | importing | OS X: .0.4.3 (see note in KeePassX section 3 below)
 Keeper Desktop | keeper | importing |OS X: 8.3.3; Windows: 8.3.3
 Keychain, OS X | keychain | importing | OS X 10.9.5, 10.10
+Key Finder | keyfinder | importing | OS X: 1.2 (1.2.0.32)
 LastPass | lastpass | importing | Browser-dependent extension; various versions exist (version 3.1.54 Firefox/Windows tested)
 LicenseKeeper | licensekeeper | importing |  OS X: 1.8.4 (1702)
 mSecure | msecure | importing | OS X: 3.5.4 (previous versions do not properly export CSV, but the converter compensates); Windows: 3.5.4 (does not properly export CSV, has quoting / escaping issues)
@@ -28,20 +29,25 @@ Passpack | passpack | importing | Web version 7.7.14 tested on OS X and Windows
 Password Agent | passwordagent | importing | Windows: 2.6.3
 Password Depot | passworddepot | importing | Windows: 8.1.1
 Passwords Plus | passwordsplus | importing | OS X: 3.0020
+Password Safe | passwordsafe | importing | Windows: 3.38
 PasswordWallet | passwordwallet | importing | OS X: 4.8.1 (6095); Windows: 4.8.1 (1147)
 RoboForm | roboform | importing | OS X 1.95; Windows 6.9.99, 7.x (see note in RoboForm section 3 below)
 Safe in Cloud | safeincloud | importing | OS X: 1.6; Windows: 2.8
 SafeWallet | safewallet | importing | OS X 1.2; Windows: 2.4.1.2, 3.0.7
 SPB Wallet | spbwallet | importing | Windows: 2.1.2 (12118)
 SplashID | splashid | importing | OS X: 7.2.2; Windows: 7.2.4
+Sticky Password | stickypassword | importing | Windows: 8.0.6.145
+True Key | truekey | importing | OS X: 1.12.0
 vCard (OS X & iCloud Contacts) | vcard | importing | OS X: 10.10.3 tested, vCard version 3.0
 Text files to notes | txt2notes | importing | OS X; Windows
+Wallet 4 (4X / 4W) | wallet4 | importing |  OS X: TBD; Windows: 4.5.0.5095
+
 
 ## Instructions
 
 The following instructions will guide you through the specific steps required to export your password manager's data, convert it, and import it into 1Password (or in the case of a 1Password export conversion, to print the data).  Instructions specific to either OS X or Windows will be noted below.  In addition, password manager-specific instructions follow in a separate section later.
 
-** Note**:  The conversion utility was written using a scripting language, and the source code is readable by anyone.  This was done so that you and others can examine the source code to feel confident that your private data is not transmitted, or used in any unintended way.  Yyou are free and welcome to examine it and ask any questions should you have any concerns.
+** Note**:  The conversion utility was written using a scripting language, and the source code is readable by anyone.  This was done so that you and others can examine the source code to feel confident that your private data is not transmitted, or used in any unintended way.  You are free and welcome to examine it and ask any questions should you have any concerns.
 
 ** Tip**: Please don't let these instructions or the process intimidate you - the instructions are lengthy to be thorough, complete, and hand-holding.  In most cases the export, conversion, and import will take just a few minutes.
 
@@ -62,7 +68,7 @@ The converter (witten in the Perl scripting language) runs in a command shell us
 
 On OS X, an AppleScript is available which simplifies converting your exported data, eliminating several steps below.
 
-On Windows, a Perl interpreter is required, and you will need the free [Strawberry Perl](http://strawberryperl.com/releases.html).  Download the latest **portable** version of Strawberry Perl, selecting the appropriate  [32-bit](http://strawberryperl.com/download/5.20.3.1/strawberry-perl-5.20.3.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.20.3.1/strawberry-perl-5.20.3.1-64bit-portable.zip) version.  When you are done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 3 below.
+On Windows, a Perl interpreter is required, and you will need the free [Strawberry Perl](http://strawberryperl.com/releases.html).  Download the latest **portable** version of Strawberry Perl, selecting the appropriate  [32-bit](http://strawberryperl.com/download/5.24.0.1/strawberry-perl-5.24.0.1-32bit-portable.zip) or  [64-bit](http://strawberryperl.com/download/5.24.0.1/strawberry-perl-5.24.0.1-64bit-portable.zip) version.  It will be named **64bit PortableZIP edition** or **32bit PortableZIP edition** (do not use the download with extra PDL libs).  When you are done with the conversion, you may delete the extracted portable version of Strawberry Perl and its zip file.  Some additional modules are required, and installation instructions are noted in the sub-steps of Step 3 below.
 
 ### 2. Export Your Data
 
@@ -79,25 +85,19 @@ it under Applications).  When a Terminal window opens, type (or better still, co
 
     cd Desktop/convert_to_1p4
 
-and hit Enter.
+and hit `Enter`.
 
-On Windows, perform the following steps:
+For converting on a Windows platform, perform steps **3a**, **3b**, and **3c**:
 
-  * __3a.__ unzip the Strawberry Perl archive and place the unzipped archive as the folder: `C:\myperl` (right click the archive, Extract All, and enter `C:\myperl` as the Destination path). When the unzip has completed, you can delete the zip file.  
+  __3a.__ Unzip the Strawberry Perl archive and place the unzipped archive as the folder: `C:\myperl` (right click the archive, Extract All, and enter `C:\myperl` as the Destination path). When the unzip has completed, you can delete the zip file.  
    
-  * __3b.__ Enter the following command into Window's __Search programs and files__ box `C:\myperl\portableshell.bat` and hit Enter. This will open a command window with the required PATH variables set.
+  __3b.__ Enter the following command into Window's __Search programs and files__ box `C:\myperl\portableshell.bat` and hit `Enter`. This will open a command window with the required PATH variables set.
 
-The following one-time commands add required modules to the Strawberry Perl `C:\myperl` area, and will be entered into the just-opened command line window (copy and paste is the best method - to paste, right-click in the command line window).  You can skip to step 3f if you've already installed the modules successfully.  Be sure a command completes successfully (the last output from the command will end with `-- OK`).
+ __3c.__ Some additional modules need to be installed into the Strawberry Perl `C:\myperl` area and the working directory needs to be set.  Enter the command below into the already open command line window (copy and paste is the best method - to paste, right-click in the command line window).  After you've entered the command, hit `Enter`.
 
-  * __3c.__ Enter the command `cpan Text::CSV` and hit Enter. 
+    %USERPROFILE%\Desktop\convert_to_1p4\install_modules.bat
 
-  * __3d.__ Enter the command `cpan Date::Calc` and hit Enter.
-
-  * __3e.__ Enter the command `cpan XML::XPath` and hit Enter.
-
-The following command changes the working directory to the **convert_to_1p4** directory you placed on your Desktop:
-
-  * __3f.__ Enter the command `cd %USERPROFILE%\Desktop\convert_to_1p4` and hit Enter.
+and hit `Enter`.
 
 ### 4. Perform the Conversion
 
@@ -155,13 +155,13 @@ If the conversion was successful, there will be a file named **1P_import.1pif** 
 
 - Importing
 
-  To Import the **1P_import.1pif** file into 1Password, use 1Password's `File > Import` menu and select the file **1P_import.1pif**.
+  To import the **1P_import.1pif** file into 1Password, use 1Password's `File > Import` menu.  When the *Import* dialog appears, select `Other` and then select `Import a 1PIF file`.   From the pull down menu, select the desired vault to use for import, press the `Select File...` button, and navigate to your Desktop to select the file named **1P_import.1pif**, and click the `Open` button.
 
   If the 1PIF import is successful, all of your password manager's records will now be available in 1Password.  These records may require some clean-up, as some or your password manager's fields may not safely map into some 1Password fields, or the data may be problematic (certain ambiguous date fields, for example). Any unmapped fields will be pushed to an entry's Notes area, so the data will be available for you within the 1Password entry.  In addition, a single entry from your password manager may convert into multiple 1Password entries.  The converter tries to place data in the right place inside of 1Password, and when it is unable to, the notes section of an entry or the Secure Notes category become the catch-all locations.  See **Additional Notes** below for more information.
 
 - Printing
 
-  To Print the file named **1P_print.html**, open and view the file with your favorite browser, and use its Print command.  You may want to configure various print options before printing out the document.
+  To print the file named **1P_print.html**, open and view the file with your favorite browser, and use its Print command.  You may want to configure various print options before printing out the document.
 
 ### 6. Securely Remove Exported Data
 
@@ -240,6 +240,10 @@ Note: This feature requires at least 1Password for Mac  5.3.BETA-17.
 
 Note: The modified date used by various password managers may reflect the date the record was last updated, or the date the password field was last updated.  The converters can only set the `last modified` value for the entire 1Password entry, and not for any specific field within the entry.
 
+#### Option: `--tags`
+
+The `--tags` option will assign one or more tags to the converted items.  Each of the tags supplied in the comma-separated list of tag values will be assigned to each entry.
+
 
 #### Option: `--nowatchtower`
 
@@ -257,13 +261,16 @@ visiting [the Watchtower page](https://watchtower.agilebits.com/) and entering t
 
 ### Source Files and Folders
 
-The main converter script convert_to_1p4.pl and each of the converter modules use the shared, common code modules **PIF.pm** and **Utils.pm** stored in the **Utils** folder.
+The conversion suite consists of the main driver Perl script and several Perl modules, as described in the table below:
 
-The **Converters** folder contains the individual converter modules.
+Folder | Purpose
+:-------:|:-------
+**convert_to_1p4.pl**  | The main conversion script.
+**Converters** | Contains the individual converter modules.
+**Utils** | Common code modules used by the main converter script and the converter modules.
+**JSON**   <br> **Text** <br> **UUID** | Code modules used by the conversion suite. These are included for your convenience in case they are not installed on your system.  These modules are commonly used or bundled Perl modules, and are available on CPAN.
 
-The folders **JSON**, **Text** and **UUID** contain code modules used by the conversion script and modules. 
-These are included for your convenience in case they are not installed on your system.  These
-modules are commonly used or bundled Perl modules, and are available on CPAN.
+
 
 ### Alternate Download Locations
 
@@ -306,7 +313,27 @@ The Clipperz converter currently supports only English field names.
 
 ### ● CSV
 
-This is a generic CSV converter which currently handles Logins.  Construct the CSV in a spreadsheet program - it must have the following columns: Title, Username, Password, URL, Notes.  It may also have a column named Tags.  Ensure the first row is a column header with those names (case does not matter).  You may add additional columns, and their titles will be used to create custom fields in the entry, and the corresponding values will be stored in these fields (do not use the reserved column names mentioned above).  If there is a Tags column, the cells should contain any number of comma-separated values to be stored into 1Password's Tags.
+This is a generic CSV converter which currently handles the the following categories:
+
+- Logins
+- Credit Cards
+- Memberships
+
+Only one category per CSV file is currently supported.
+
+Construct the CSV in a spreadsheet program.  The first row must be a header row that contains the category-specific field names, and possibly other columns, as mentioned below.  The letter case of the field names does not matter, nor does the order of the columns.  A value must be present in the record for at least one of the field names shown in **bold** below in order to cause the category to be auto-detected:
+
+For **Logins**, the supported column fields labels are: *Title*, **Username**, **Password**, **URL**, *Notes*.
+
+For **Credit Cards**, the supported column fields labels are: *Title*, **Card Number**, **Expires**, **Cardholder**, *PIN*, **Bank**, **CVV**, *Notes*.  If the date data in the Expires column is not formatted as mm/yyyy or mmyyyy, or is not a valid month/year, the expiration data will be placed in the Notes section of the entry.
+
+For **Memberships**, the supported column fields labels are: *Title*, **Group**, **Member Name**, **Member ID**, *Expiry Date*, **Member Since**, *PIN*,  *Telephone*,  *Username*,  *Password*, *URL*, *Notes*.  If the date data in the Expiry Date or Member Since columns are not formatted as mm/yyyy or mmyyyy, or are not valid month/year values, the date data will be placed in the Notes section of the entry.  The Username, Password and Website data if present will be placed into a Login record.
+        
+**Other columns**
+
+You may add a column named *Tags*.  If there is a Tags column, the cells should contain any number of comma-separated values to be stored into 1Password's Tags.
+
+You may add additional columns, and their titles will be used to create custom fields in the entry, and the corresponding values will be stored in these fields (do not use the reserved column names mentioned above).
 
 ---
 
@@ -406,6 +433,12 @@ The converter will decode and convert an entry's attachment. It is placed in a f
 ### ● Keeper Desktop
 
 Launch Keeper Desktop, and export its database to a file using the `Backup` button on the upper right side of the window.  Select the last `Export Now` button, labeled *Export to Excel (not encrypted)*.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit Keeper Desktop. 
+
+---
+
+### ● Key Finder
+
+Launch Key Finder, and export its database as an XML export file using the `File > Save > Save to XML (*.xml)` menu item.  When the Save dialog appears, enter the name **pm_export.xml**.  Next, expand the dialog by pressing the downward triangle at the right of the `Save As` field, and select **Desktop** from the sidebar, and finally, press the `Save` button.  You may now quit Key Finder.
 
 ---
 
@@ -541,6 +574,12 @@ Launch Passwords Plus, and export its database to a file using the `Tools > Expo
 
 ---
 
+### ● Password Safe
+
+Launch Password Safe, and export its database to an XML file using the `File > Export To... > XML Format...` menu item.   Enter your password in the *Current Safe Combination* area.  Click the **Export file** button to the right of the path entry area, navigate to your **Desktop** folder, and enter the name **pm_export.xml** in the *File name* field in the dialog, and click the `Save` button, and the finally, click the `Export XML` button to create the export file on your Desktop.  Click the `Finish` button to close the export dialog.  The name of your *name_of_export_file* will be **pm_export.xml**.  You may now quit Password Safe. 
+
+---
+
 ### ● PasswordWallet
 
 Launch PasswordWallet, and export its database as a text file using the `File > Export > Visible entries to text file...` menu.  Enter the wallet's password when the password dialog appears.  Navigate to your **Desktop** folder, and save the file with the name **pm_export.txt** to your Desktop.  You may now quit PasswordWallet.
@@ -564,11 +603,11 @@ You may also want to export your Identities and Safenotes now, using a similar p
 
 You may now quit RoboForm.  Perform conversions and imports on each of the files you exported.  The **roboform** converter will convert one or more export files at once, so you may specify each of the files you exported above on the same command line.  Example:
 
-    perl convert_to_1p4 roboform -v pm_export_logins.html pm_export_identities.html pm_export_safenotes.html
+    perl convert_to_1p4.pl roboform -v pm_export_logins.html pm_export_identities.html pm_export_safenotes.html
     
 The command above will convert all three export files into a single 1PIF file containing your converted logins, identity items, and safenotes.
 
-Note: RoboForm version 7 and above does not export the full original URL for Login items.  You will probably need to edit some login entires within 1Password to make Open and Fill work correctly.
+**Note**: RoboForm version 7 and above does not export the full original URL for Login items.  You will probably need to edit some login entires within 1Password to make Open and Fill work correctly.
 
 ---
 
@@ -588,15 +627,27 @@ Navigate to your **Desktop** folder, and save the file with the name **pm_export
 
 ### ● SPB Wallet
 
-There is no need to export any data from SPB Wallet.  The converter will read and decrypt the data directly from the SPB Wallet .swl file.  It might be easiest to move your .swl wallet file to your Desktop.  When you enter your command line, use your .swl wallet file's name as *name_of_export_file*.
+There is no need to export any data from SPB Wallet.  The converter will read and decrypt the data directly from the SPB Wallet .swl file.  It might be easiest to move your .swl wallet file to your Desktop.  When you enter your command line, your *name_of_export_file* will be **..\name_of_your_spbwallet_file.swl**.
 
-If would prefer not to move the .swl file, you'll have to specify a path to your wallet file in place of the relative path ..\*name_of_your_spbwallet_file*.
+If would prefer not to move the .swl file, you'll have to specify a path to your wallet file as your *name_of_export_file*.
 
 ---
 
 ### ● SplashID Safe
 
 Launch SplashID Safe, and export its database to a vID file using the `File > Export > SplashID vID` menu (be sure not to choose SplashID vID3).  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.vld** after exporting the data).  At the bottom of the dialog, select `Export All Records` and deselect `Export Attachments`.  Click `Save`.  When the *Set Password* dialog appears, just click `OK` (do not enter a password). You may now quit SplashID Safe.
+
+---
+
+### ● Sticky Password
+
+Launch Sticky Password, and export its database to an XML file using the `Menu` pulldown in the upper right corner of the user interface.  Select the `Export` menu item, and then select the `Export All` item.   In the next dialog screen, select `Sticky Password 6 XML` and click `Next`.  Select `Save to file`.  In the next dialog screen, navigate to your **Desktop** folder, and in the `File name` area, enter the file name **pm_export**, and click the `Save` button.  Your file will be named **pm_export.xml** after exporting the data. You may now quit Sticky Password.
+
+---
+
+### ● True Key
+
+Launch True Key, and export its login entries as a JSON file using, using the settings gear icon in the upper right corner of the user interface.  Select `App Settings` below that, and click the `Export` button in the `Export Data` section of the settings at the bottom of the list.  Click `Continue` when the export warning dialog is presented, enter your master password when prompted, and click the `Unlock` button.  When the Save dialog appears, navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export**, and click the `Save` button.  Your file will be named **pm_export.json** after exporting the data. You may now quit True Key.
 
 ---
 
@@ -628,6 +679,16 @@ You will need to install an additional Perl module to use this.  Issue the comma
     cpan File::Type
 
 in the command shell.  This only needs to be done once, prior to using this converter.
+
+---
+
+### ● Wallet 4 (4X / 4W)
+
+Launch Wallet 4, and export its database as an HTML file using the `Wallet > Export HTML...` menu.  Navigate to your **Desktop** folder, and in the `Save As` area, enter the file name **pm_export** (note: your file will be named **pm_export.html** after exporting the data).  Click `Save`.  You may now quit Wallet 4.
+
+**Note**: Wallet 4 does not export attached files or images, so they are not available to the converter.  Be sure to export your files from Wallet 4 before you remove it from your system.  A Files or Pictures item in Wallet 4 will be imported as a Secure Note in 1Password, and it contains a reference to the original file name in the notes section.
+
+**Note**: Favorites will not be retained.  Wallet 4 does not link the Favorites entires to the actual entries.  Only the name of the item is referenced in the favorites list, but this name may not be unique, so it is not possible to tag an item as a favorite.
 
 ---
 

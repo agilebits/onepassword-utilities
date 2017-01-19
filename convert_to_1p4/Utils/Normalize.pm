@@ -1,7 +1,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Utils::Normalize 1.00;
+package Utils::Normalize 1.01;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(normalize_card_data explode_normalized add_custom_fields npre_explode npost_explode CFS_FIELD CFS_TYPEHINT CFS_MATCHSTR CFS_OPTS);
@@ -156,7 +156,7 @@ sub explode_normalized {
     my (%oc, $nc);
     # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
     if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes folder modified icon/) {
+	for (qw/title tags notes folder modified icon pwhistory/) {
 	    # trigger the for() loop below
 	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
 	}
@@ -183,7 +183,7 @@ sub explode_normalized {
 	$added_title ||= myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
 	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
 
-	for (qw/tags notes folder modified icon/) {
+	for (qw/tags notes folder modified icon pwhistory/) {
 	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
 	}
     }

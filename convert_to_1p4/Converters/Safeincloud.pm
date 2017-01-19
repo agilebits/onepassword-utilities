@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Safeincloud 1.02;
+package Converters::Safeincloud 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -113,7 +113,7 @@ sub do_import {
 	foreach my $cardnode ($cardnodes->get_nodelist) {
 	    my (%cmeta, @fieldlist);
 
-	    next if $cardnode->getAttribute('template') eq 'true';
+	    next if defined $cardnode->getAttribute('template') and $cardnode->getAttribute('template') eq 'true';
 	    $cmeta{'title'} = $cardnode->getAttribute('title');
 	    debug "Card: ", $cmeta{'title'};
 

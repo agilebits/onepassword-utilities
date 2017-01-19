@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Csv 1.02;
+package Converters::Csv 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -22,8 +22,22 @@ use Utils::Utils;
 use Utils::Normalize;
 
 use Text::CSV;
+use Time::Piece;
+use Time::Local qw(timelocal);
 
 my %card_field_specs = (
+    creditcard =>		{ textname => '', fields => [
+	[ 'title',		0, qr/^title$/i, ],
+	[ 'ccnum',		1, qr/^card number$/i, ],
+	[ 'expiry',		1, qr/^expires$/i, ],
+	[ 'cardholder',		1, qr/^cardholder$/i, ],
+	[ 'pin',		0, qr/^pin$/i, ],
+	[ 'bank',		1, qr/^bank$/i, ],
+	[ 'cvv',		1, qr/^cvv$/i, ],
+	[ 'notes',		0, qr/^notes$/i, ],
+	[ 'tags',		0, qr/^tags$/i, ],
+    ]},
+
     login =>			{ textname => '', fields => [
 	[ 'title',		0, qr/^title$/i, ],
 	[ 'url',		1, qr/^website|url$/i, ],
@@ -31,6 +45,20 @@ my %card_field_specs = (
 	[ 'password',		1, qr/^password$/i, ],
 	[ 'notes',		0, qr/^notes$/i, ],
 	[ 'tags',		0, qr/^tags$/i, ],
+    ]},
+    membership =>		{ textname => '', fields => [
+	[ 'title',		0, qr/^title$/i, ],
+	[ 'org_name',		1, qr/^group$/i, ],
+	[ 'member_name',	1, qr/^member name$/i, ],
+	[ 'membership_no',	1, qr/^member id$/i, ],
+	[ 'expiry_date',	0, qr/^expiry date$/i,	{ func => sub { return date2monthYear($_[0], 2) } } ],
+	[ 'member_since',	1, qr/^member since$/i,	{ func => sub { return date2monthYear($_[0], 2) } }],
+	[ 'pin',		0, qr/^pin$/i, ],
+	[ 'phone',		0, qr/^telephone$/i, ],
+	[ 'username',		0, qr/^username$/i, 	{ type_out => 'login' } ],
+	[ 'password',		0, qr/^password$/i, 	{ type_out => 'login' } ],
+	[ 'url',		0, qr/^website|url$/i, 	{ type_out => 'login' } ],
+	[ 'notes',		0, qr/^notes$/i, ],
     ]},
     note =>			{ textname => '', fields => [
     ]},
@@ -44,7 +72,7 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-        'opts'          => [],
+	'opts'		=> [ ],
     }
 }
 
@@ -70,7 +98,11 @@ sub do_import {
 
     my $column_names = $csv->getline($io) or
 	bail "Failed to parse CSV column names: $!";
-    $_ = lc $_  foreach @$column_names;
+
+    foreach (@$column_names) {
+	$_ =~ s/\s*$//;		# be kind - remove any trailing whitespace from column labels
+	$_ = lc $_;
+    }
 
     # get the card type, and create a hash of the key field names that maps the column names to column positions
     my ($itype, $col_names_to_pos) = find_card_type($column_names);
@@ -101,6 +133,9 @@ sub do_import {
 
 	# everything that remains in the row is the field data
 	for (my $i = 0; $i <= $#$column_names; $i++) {
+	    if ($itype eq 'creditcard' and $column_names->[$i] eq 'expires') {
+		$row->[$i] = date2monthYear($row->[$i]);
+	    }
 	    push @fieldlist, [ $column_names->[$i] => $row->[$i] ];		# retain field order
 	}
 
@@ -128,10 +163,10 @@ sub do_export {
 
 sub find_card_type {
     my $row = shift;
-    my $otype = 'note';
+    my $otype;
     my %col_names_to_pos;
 
-    for my $type (keys %card_field_specs) {
+    for my $type (sort by_test_order keys %card_field_specs) {
 	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 	    for (my $i = 0; $i <= $#$row; $i++) {
 		if (defined $cfs->[CFS_MATCHSTR] and $row->[$i] =~ /$cfs->[CFS_MATCHSTR]/ms) {
@@ -140,10 +175,40 @@ sub find_card_type {
 		}
 	    }
 	}
+	last if defined $otype;
     }
 
+    $otype ||= 'note';
     debug "\t\ttype detected as '$otype'";
     return ($otype, \%col_names_to_pos);
+}
+
+# sort logins as the last to check
+sub by_test_order {
+    return  1 if $a eq 'login';
+    return -1 if $b eq 'login';
+    $a cmp $b;
+}
+
+
+# mm/yyyy
+# mmyyyy
+sub parse_date_string {
+    local $_ = $_[0];
+
+    s/\///;
+
+    return undef unless /^\d{6}$/;
+    if (my $t = Time::Piece->strptime($_, "%m%Y")) {
+	return $t;
+    }
+
+    return undef;
+}
+
+sub date2monthYear {
+    my $t = parse_date_string @_;
+    return defined $t->year ? sprintf("%d%02d", $t->year, $t->mon) : $_[0];
 }
 
 1;

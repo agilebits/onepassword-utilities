@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keychain 1.03;
+package Converters::Keychain 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -86,9 +86,12 @@ my @rules = (
     cdat => [
 		{ c => sub { $_[0] =~ s/^0x\S+\s+"(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z.+"$/$1-$2-$3 $4:$5:$6/g } },
     ],
-    # desc must come before DATA so that 'secure note' type can be used as a condition in DATA below
     desc => [
-		{ c => sub { $_[0] =~ s/^"(.*)"$/$1/; $itype = 'note' if $_[0] eq 'secure note'; $_[0] } },
+		{ c => sub { $_[0] =~ s/^"(.*)"$/$1/; $_[0] } },
+    ],
+    # type must come before DATA so that 'note' type can be used as a condition in DATA below
+    type => [
+		{ c => sub { $_[0] =~ s/^"(.*)"$/$1/; $itype = 'note' if $_[0] eq 'note'; $_[0] } },
     ],
     DATA => [
 		# secure note data, early terminates rule list testing
@@ -130,6 +133,7 @@ KEYCHAIN_ENTRY:
 	if ($contents =~ s/\Akeychain: (.*?)\n+(?=$|^keychain: ")//ms) {
 	    local $_ = $1; my $orig = $1;
 	    $itype = 'login';
+	    %entry = ();
 
 	    $examined++;
 	    debug "Entry ", $examined;
@@ -138,14 +142,23 @@ KEYCHAIN_ENTRY:
 	    my $keychain = $1;
 	    #debug 'Keychain: ', $keychain;
 
+	    # icloud exports may have a "version: value" line
+	    s/\Aversion: (\d+)\n//ms;
+
 	    s/\Aclass: "?(.*?)"? ?\n//ms;
-	    my $class = $1;
+	    $entry{'CLASS'} = $1;
 
 	    # attributes
 	    s/\Aattributes:\n(.*?)(?=^data:)//ms;
-	    %entry = map { clean_attr_name(split /=/, $_) } split /\n\s*/, $1 =~ s/^\s+//r;
-
-	    $entry{'CLASS'} = $class;
+	    my $attrs = $1;
+	    debug "raw attibute list:\n$attrs";
+	    for my $attr (split /\n\s*/, $1 =~ s/^\s+//r) {
+		my ($f,$v) = split /=/, $attr;
+		bail "Unexpected undefined value in class=$entry{'CLASS'} attribute '$f'\n$attrs"	if not defined $v;
+		$f = clean_attr_name($f);
+		debug "\tattr($f) => '$v'";
+		$entry{$f} = $v;
+	    }
 
 	    # data
 	    s/\Adata:\n(.+)\z//ms;
@@ -229,7 +242,7 @@ RULE:
 		debug sprintf "\t    %-12s : %s", $_, $h{$_}				if exists $h{$_};
 	    }
  
-	    # don't set/use $sv before $entry{''svce'} is removed of _afp*, _smb*, and .local, since it defeats dup detection
+	    # don't set/use $sv before $entry{'svce'} is removed of _afp*, _smb*, and .local, since it defeats dup detection
 	    my $sv = $entry{'svce'} // $entry{'srvr'};
 
 	    my $s = join ':::', 'sv', $sv,
@@ -289,7 +302,8 @@ sub by_test_order {
 }
 
 sub clean_attr_name {
-    return ($_[0] =~ /"?([^<"]+)"?<\w+>$/, $_[1]);
+    $_[0] =~ /"?([^<"]+)"?<\w+>$/;
+    return $1;
 }
 
 # Date converters

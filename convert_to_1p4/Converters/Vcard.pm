@@ -141,7 +141,7 @@ sub do_import {
 		delete $_->{'param'};
 		for my $param (@{$_->{'params'}}) {
 		    for my $pkey (keys %{$param}) {
-			push @{$_->{'_params'}{$pkey}}, $param->{$pkey};
+			push @{$_->{'_params'}{lc $pkey}}, $param->{$pkey};
 		    }
 		}
 		delete $_->{'params'};
@@ -187,13 +187,17 @@ sub do_import {
 	    say "Skipping unsupported VCARD version: ", $v;
 	    next;
 	}
-	if (($v = get_prop_value($p, 'PRODID')) !~ m(//Apple Inc\.//)) {
-	    say "Skipping unsupported VCARD implementation: ", $v;
-	    next;
-	}
+
+	$v = get_prop_value($p, 'PRODID');
+	# allow other forms of vCard.  Currently working with Google Contacts.
+	# Need a way to classify a Google Contacts export, and later others.
+	# if (($v !~ m(//Apple Inc\.//)) {
+	    # say "Skipping unsupported VCARD implementation: ", $v;
+	    # next;
+	#}
 
 	# Grab the standard items: title, notes
-	$cmeta{'title'} = get_prop_value($p, 'FN') // 'Unnamed';		# FN: Full Name
+	$cmeta{'title'} = sane_default(get_prop_value($p, 'FN'), 'Unnamed');		# FN: Full Name
 	$cmeta{'notes'} = get_prop_value($p, 'NOTE');
 
 	# Grab the image, and use it if --icon is enabled (and a required graphics library is available).
@@ -218,7 +222,7 @@ sub do_import {
 			    if (ref $v eq 'HASH') {
 				my $vv = $v->{'value'};
 				# When date has no year value, Apple sets the year to 1604 and adds the attribute X-APPLE-OMIT-YEAR
-				$vv =~ s/^\d{4}-//		if exists $v->{'type'}{'X-APPLE-OMIT-YEAR'};
+				$vv =~ s/^\d{4}-//		if exists $v->{'type'}{'x-apple-omit-year'};
 				$v = $vv;
 			    }
 			}
@@ -227,15 +231,20 @@ sub do_import {
 		}
 	    }
 
-	    elsif ($prop =~ /^(?:X-(YAHOO|AIM|MSN))$/) {
+	    elsif ($prop =~ /^(?:X-(YAHOO|AIM|MSN|GTALK))$/) {
 		my $propname = $1;;
 		if ($v = get_prop_value($p, $prop, 'type=pref')) {
 		    push @fieldlist, [ $propname => $v->{'value'} ];
 		}
 		while (exists $p->{$prop}) {
 		    if ($v = get_prop_value($p, $prop)) {
-			$l = lc sprintf "%s(%s)", $propname, myjoin(' ', $v->{'label'}, $v->{'type'}{'type'}->[0]);
-			push @fieldlist, [ $l => $v->{'value'} ];
+			if (ref $v eq 'HASH') {
+			    $l = lc sprintf "%s(%s)", $propname, myjoin(' ', $v->{'label'}, $v->{'type'}{'type'}->[0]);
+			    push @fieldlist, [ $l => $v->{'value'} ];
+			}
+			else {
+			    push @fieldlist, [ $propname => $v ];
+			}
 		    }
 		}
 	    }
@@ -254,12 +263,20 @@ sub do_import {
 	    }
 
 	    elsif ($prop eq 'EMAIL') {
+		my $preferred_found;
 		if ($v = get_prop_value($p, $prop, 'type=pref')) {		# get preferred items
 		    push @fieldlist, [ $prop => $v->{'value'} ];
+		    $preferred_found++;
 		}
 		while (exists $p->{$prop}) {
 		    if ($v = get_prop_value($p, $prop, 'type=*')) {
-			$l = lc sprintf "%s(%s)", $prop, $v->{'label'} // join(' ', grep(!/^INTERNET$/, @{$v->{'type'}}));
+			if (not defined $v->{'label'} and not grep(!/^INTERNET$/, @{$v->{'type'}}) and not $preferred_found) {
+			    $l = 'EMAIL';
+			    $preferred_found++;
+			}
+			else {
+			    $l = lc sprintf "%s(%s)", $prop, sane_default($v->{'label'} // join(' ', grep(!/^INTERNET$/, @{$v->{'type'}})), 'unlabeled');
+			}
 			push @fieldlist, [ $l => $v->{'value'} ];
 		    }
 		}
@@ -317,7 +334,7 @@ sub do_import {
 	    elsif ($prop eq 'IMPP') {
 		while (exists $p->{$prop}) {
 		    if ($v = get_prop_value($p, $prop)) {
-			$l = lc sprintf "%s(%s)", 'messaging', myjoin(' ', $v->{'label'}, ($v->{'type'}{'X-SERVICE-TYPE'} // $v->{'type'}{'type'})->[0]);
+			$l = lc sprintf "%s(%s)", 'messaging', myjoin(' ', $v->{'label'}, ($v->{'type'}{'x-service-type'} // $v->{'type'}{'type'})->[0]);
 			push @fieldlist, [ $l => $v->{'value'} =~ s/^[^:]+://r ];
 		    }
 		}
@@ -419,26 +436,28 @@ sub get_prop_value {
 	}
     }
     else {
-	my ($pkey, $pvalue) = split /=/, $param		if defined $param;
-	for ($i = 0; $i < @{$p->{$key}}; $i++) {
-	    my $pp = $p->{$key}[$i];
-	    if (exists $pp->{'_params'}{$pkey}) {
-		if ($pvalue eq '*' or grep { $_ eq $pvalue } @{$pp->{'_params'}{$pkey}}) {
-		    $ret = { 
-			label => $pp->{'label'} // undef,
-			value => $pp->{'value'},
-			type  => $pp->{'_params'}{$pkey},
-		    };
-		    last;
+	if (ref $p->{$key} eq 'ARRAY') {
+	    my ($pkey, $pvalue) = split /=/, $param		if defined $param;
+	    for ($i = 0; $i < @{$p->{$key}}; $i++) {
+		my $pp = $p->{$key}[$i];
+		if (exists $pp->{'_params'}{$pkey}) {
+		    if ($pvalue eq '*' or grep { $_ eq $pvalue } @{$pp->{'_params'}{$pkey}}) {
+			$ret = { 
+			    label => $pp->{'label'} // undef,
+			    value => $pp->{'value'},
+			    type  => $pp->{'_params'}{$pkey},
+			};
+			last;
+		    }
 		}
-	    }
-	    else {
-		if ($pvalue eq '*') {		# accept 'label' as a 'type' when there are no 'type' params
-		    $ret = { 
-			label => $pp->{'label'},
-			value => $pp->{'value'},
-		    };
-		    last;
+		else {
+		    if ($pvalue eq '*') {		# accept 'label' as a 'type' when there are no 'type' params
+			$ret = { 
+			    label => $pp->{'label'},
+			    value => $pp->{'value'},
+			};
+			last;
+		    }
 		}
 	    }
 	}
@@ -504,6 +523,14 @@ sub by_field_name {
     return  1 if $a eq 'Date Created';
     return -1 if $b eq 'Date Created';
     $a cmp $b;
+}
+
+# return a string value if defined and not empty, otherwise the supplied default value
+sub sane_default {
+    my ($str, $default) = @_;
+
+    return $str if defined $str and $str ne '';
+    return $default;
 }
 
 # Date converters
