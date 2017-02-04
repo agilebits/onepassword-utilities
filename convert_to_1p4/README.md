@@ -607,7 +607,7 @@ You may now quit RoboForm.  Perform conversions and imports on each of the files
     
 The command above will convert all three export files into a single 1PIF file containing your converted logins, identity items, and safenotes.
 
-**Note**: RoboForm version 7 and above does not export the full original URL for Login items.  You will probably need to edit some login entires within 1Password to make Open and Fill work correctly.
+**Note**: RoboForm version 7 and above does not export the full original URL for Login items.  You will probably need to edit some login entries within 1Password to make Open and Fill work correctly.
 
 ---
 
@@ -688,7 +688,7 @@ Launch Wallet 4, and export its database as an HTML file using the `Wallet > Exp
 
 **Note**: Wallet 4 does not export attached files or images, so they are not available to the converter.  Be sure to export your files from Wallet 4 before you remove it from your system.  A Files or Pictures item in Wallet 4 will be imported as a Secure Note in 1Password, and it contains a reference to the original file name in the notes section.
 
-**Note**: Favorites will not be retained.  Wallet 4 does not link the Favorites entires to the actual entries.  Only the name of the item is referenced in the favorites list, but this name may not be unique, so it is not possible to tag an item as a favorite.
+**Note**: Favorites will not be retained.  Wallet 4 does not link the Favorites entries to the actual entries.  Only the name of the item is referenced in the favorites list, but this name may not be unique, so it is not possible to tag an item as a favorite.
 
 ---
 
