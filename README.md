@@ -4,11 +4,14 @@ This project is a collection of utilities contributed by the 1Password community
 
 A huge hat tip to [@MrC](https://discussions.agilebits.com/profile/77142/MrC) for creating the convert_to_1p4 utility and contributing it to help as many people as possible. 
 
-## Downloading
+**Caution:** Before working with your sensitive data in unencrypted format, it is a good idea to disable any automatic backup software that could potentially copy your unencrypted data to another location, especially if that location is the cloud. Once you've completed the conversion and securely deleted the unencrypted files, you can re-enable the service. Thanks to [@TechGuy2000](https://github.com/TechGuy2000) for the reminder!
 
-[Download the 1Password utilities (master.zip)](https://github.com/AgileBits/onepassword-utilities/archive/master.zip) and unzip the file on your Desktop.
+## Using the Converters
 
-The instructions in the README for the convert_to_1p4 utility assume you have the onepassword-utilities folder on your Desktop.
+1. [Download the 1Password utilities](https://github.com/AgileBits/onepassword-utilities/archive/master.zip)
+2. Unzip the downloaded file.
+3. Copy the _convert_to_1p4_ folder to your Desktop. (important step)
+4. Open the README.md file inside the _convert_to_1p4_ folder and follow the instructions for the converter you need.
 
 ## Contributing Your Utility
 
