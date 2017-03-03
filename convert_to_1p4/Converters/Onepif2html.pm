@@ -168,24 +168,24 @@ __DATA__
 <xsl:template match="xsl:stylesheet" />
   
 <xsl:template match="/">
-  <html>
+    <html>
     <head>
     <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
     <meta http-equiv="Cache-Control" content="no-store" />
     <title><xsl:value-of select="$header"/></title>
     <style type="text/css">
 	.fieldname { color: #187ee6; font-size:smaller; vertical-align: text-top; padding: 0; margin: 0; }
-	.sectiontitle { color: #00a688; font-size:bigger; font-variant: small-caps; }
+	.sectiontitle { color: #00a688; font-size: larger; font-variant: small-caps; }
 	.item { border: solid 1px #dddddd; margin: 0px 0px 1px 0px; padding: 0px 1px 0px 1px; background: #fff; }
 
 	body { font-size: 9pt; font-family: serif; border: none; }
-	h2 { font-size: 16; background: #ffffff; color: #187ee6; }
+	h2 { font-size: 16pt; background: #ffffff; color: #187ee6; }
 	h3 { font-size: 12px; color: #0d4680; margin: 1em 0em 0em 0em; padding: 0em 1em 0em 0em; }
 	ul { display: inline; margin: 0; padding: 0; list-style-type: none; }
 	li { display: inline-block; padding: .0em 0em 0em 0em; margin: 0; color: #000; background-color: #fefefe; }
 
 	table { page-break-inside:auto; border: solid black 1px; width: 100%; border-collapse: collapse; empty-cells: show; }
-	th { text-style: bold; font-size: 9pt; border: solid black 1px; }
+	th { font-weight: bold; font-size: 9pt; border: solid black 1px; }
 	td { font-size: 9pt; border: solid black 1px;}
 	tr { page-break-inside:avoid; page-break-after:auto; }
     </style>
@@ -386,12 +386,24 @@ __DATA__
 <!-- secureContents -->
 <xsl:template match="secureContents/fields">
     <xsl:for-each select=".">
-	<li>
-	    <xsl:if test="value">
-		<span class="fieldname"><xsl:value-of select="name" />: </span>
-		<xsl:value-of select = "value" />
-	    </xsl:if>
-	</li>
+	<xsl:if test="value">
+		<xsl:choose>
+		    <xsl:when test="../../typeName='webforms.WebForm'">
+			<xsl:if test="designation">
+			    <li>
+				<span class="fieldname"><xsl:value-of select="designation" />: </span>
+				<xsl:value-of select = "value" />
+			    </li>
+			</xsl:if>
+		    </xsl:when>
+		    <xsl:otherwise>
+			<li>
+			    <span class="fieldname"><xsl:value-of select="name" />: </span>
+			    <xsl:value-of select = "value" />
+			</li>
+		    </xsl:otherwise>
+		</xsl:choose>
+	</xsl:if>
     </xsl:for-each>
 </xsl:template>
 

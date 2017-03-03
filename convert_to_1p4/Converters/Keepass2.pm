@@ -60,7 +60,7 @@ sub do_import {
     my %attachments;
     foreach my $binnode ($xp->findnodes('/KeePassFile/Meta/Binaries/Binary')) {
 	my $id = $binnode->getAttribute('ID');
-	$attachments{$id}{'iscompressed'} = ($binnode->getAttribute('Compressed') eq 'True');
+	$attachments{$id}{'iscompressed'} = (defined $binnode->getAttribute('Compressed') and $binnode->getAttribute('Compressed') eq 'True') || 0;
 	$attachments{$id}{'data'} = $binnode->string_value;
     }
 
@@ -69,65 +69,65 @@ sub do_import {
     my $groupnodes = $xp->find('/KeePassFile/Root//Group');
     foreach my $groupnode ($groupnodes->get_nodelist) {
 	my @group = get_group_path($xp, $groupnode);
+
 	my $entrynodes = $xp->find('./Entry', $groupnode);
 	foreach my $entrynode ($entrynodes->get_nodelist) {
-	    debug "ENTRY:";
 	    my (%cmeta, @fieldlist);
+	    debug "ENTRY:";
 	    debug "Node: ", $entrynode->getName;
-	    foreach my $element ($entrynode->getChildNodes) {
-		next unless scalar $element->getName;
-		debug "Element: ", $element->getName;
-		if ($element->getName eq 'String') {
-		    my $key = ($xp->findnodes('./Key', $element))[0]->string_value;
-		    my $value = ($xp->findnodes('./Value', $element))[0]->string_value;
-		    debug "\tkey: $key: '$value'";
-		    if ($key =~ /^Title|Notes$/) {
-			$cmeta{lc $key} = $value;
-		    }
-		    else {
-			push @fieldlist, [ $key => $value ];
-		    }
 
+	    my $entry_data = get_entrydata_from_entry('Element', $xp, $entrynode, $main::opts{'modified'});
+	    for (@{$entry_data->{'kvpairs'}}) {
+		next if $_->[1] eq '';
+		if ($_->[0] =~ /^Title|Notes$/) {
+		    $cmeta{lc $_->[0]} = $_->[1];
 		}
-		if ($element->getName eq 'Binary') {
-		    my %a = (
-			filename => ($xp->findnodes('./Key',   $element))[0]->string_value,
-			id       => ($xp->findnodes('./Value', $element))[0]->getAttribute('Ref'),
-		    );
-		    debug "\tAttachment $a{'id'}: '$a{'filename'}";
-		    push @{$cmeta{'attachments'}}, \%a;
+		elsif ($main::opts{'modified'} and $_->[0] eq 'LastModificationTime') {
+		    $cmeta{'modified'} = date2epoch($_->[1]);
 		}
-		elsif ($main::opts{'modified'} and $element->getName eq 'Times') {
-		    my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
-		    debug " **** Field: LastModificationTime: ==> '$mtime'";
-		    $cmeta{'modified'} = date2epoch($mtime);
+		else {
+		    push @fieldlist, [ $_->[0] => $_->[1] ];
 		}
 	    }
-	    $cmeta{'tags'} = join '::', @group;
-	    $cmeta{'folder'} = [ @group ];
-
 	    my $itype = find_card_type(\@fieldlist);
 	    # skip all types not specifically included in a supplied import types list
 	    next if defined $imptypes and (! exists $imptypes->{$itype});
 
+	    $cmeta{'tags'} = join '::', @group;
+	    $cmeta{'folder'} = [ @group ];
+
 	    # handle creation of attachment files from encoded / compressed string
-	    my $dir;
-	    for (@{$cmeta{'attachments'}}) {
-		my $data;
-		if ($attachments{$_->{'id'}}->{'iscompressed'}) {
-		    my $inf = new Compress::Raw::Zlib::Inflate('-WindowBits' => WANT_GZIP_OR_ZLIB) ;
-		    my $status = $inf->inflate(decode_base64($attachments{$_->{'id'}}->{'data'}), $data);
-		    if ($status ne 'stream end') {
-			warn "Failed to inflate compressed data: $_->{'filename'}\n$!";
-			return;
+	    if (exists $entry_data->{'attachments'}) {
+		my $dir;
+		for (@{$entry_data->{'attachments'}}) {
+		    my $data;
+		    if ($attachments{$_->{'id'}}->{'iscompressed'}) {
+			my $inf = new Compress::Raw::Zlib::Inflate('-WindowBits' => WANT_GZIP_OR_ZLIB) ;
+			my $status = $inf->inflate(decode_base64($attachments{$_->{'id'}}->{'data'}), $data);
+			if ($status eq Z_OK or $status eq Z_STREAM_END) {
+			    $dir = create_attachment(\$data, $dir, $_->{'filename'}, $cmeta{'title'});
+			}
+			else {
+			    warn "Failed to inflate compressed data: $_->{'filename'}\n$!";
+			}
+		    }
+		    else {
+			$data = decode_base64 $attachments{$_->{'id'}}->{'data'};
+			$dir = create_attachment(\$data, $dir, $_->{'filename'}, $cmeta{'title'});
 		    }
 		}
-		else {
-		    $data = decode_base64 $attachments{$_->{'id'}}->{'data'};
-		}
-		$dir = create_attachment(\$data, $dir, $_->{'filename'}, $cmeta{'title'});
 	    }
-	    delete $cmeta{'attachments'};
+
+	    # History entries
+	    my $histentrynodes = $xp->find('./History/Entry', $entrynode);
+	    foreach my $histentrynode ($histentrynodes->get_nodelist) {
+		my $histentry_data = get_entrydata_from_entry('History element', $xp, $histentrynode, 1);
+		if (my @pw = grep { $_->[0] eq 'Password' } @{$histentry_data->{'kvpairs'}}) {
+		    if (my @time = grep { $_->[0] eq 'LastModificationtime' } @{$histentry_data->{'kvpairs'}}) {
+			push @{$cmeta{'pwhistory'}}, [ $pw[0][1], date2epoch($time[0][1]) ];
+		    }
+		}
+	    }
 
 	    my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
 	    my $cardlist   = explode_normalized($itype, $normalized);
@@ -139,6 +139,7 @@ sub do_import {
 	    $n++;
 	}
     }
+
     summarize_import('item', $n - 1);
     return \%Cards;
 }
@@ -174,6 +175,37 @@ sub by_test_order {
     $a cmp $b;
 }
 
+sub get_entrydata_from_entry {
+    my ($type, $xp, $entrynode, $gettimes) = @_;
+
+    my %entrydata;
+
+    foreach my $element ($entrynode->getChildNodes) {
+	next unless scalar $element->getName;
+	debug "$type: ", $element->getName;
+	if ($element->getName eq 'String') {
+	    my $key = ($xp->findnodes('./Key', $element))[0]->string_value;
+	    my $value = ($xp->findnodes('./Value', $element))[0]->string_value;
+	    debug "\tkey: $key: '$value'";
+	    push @{$entrydata{'kvpairs'}}, [ $key => $value ]	if $value ne '';
+	}
+	elsif ($element->getName eq 'Binary') {
+	    my %a = (
+		filename => ($xp->findnodes('./Key',   $element))[0]->string_value,
+		id       => ($xp->findnodes('./Value', $element))[0]->getAttribute('Ref'),
+	    );
+	    debug "\tAttachment $a{'id'}: '$a{'filename'}";
+	    push @{$entrydata{'attachments'}}, \%a;
+	}
+	elsif ($gettimes and $element->getName eq 'Times') {
+	    my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
+	    debug "\tkey: LastModificationTime: '$mtime'";
+	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationtime' => $mtime ];
+	}
+    }
+
+    return \%entrydata;
+}
 sub get_group_path {
     my ($xp, $node) = @_;
 

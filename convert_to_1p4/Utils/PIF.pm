@@ -1,7 +1,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.07;
+package Utils::PIF 1.08;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(create_pif_record create_pif_file add_new_field clone_pif_field get_items_from_1pif typename_to_typekey prepare_icon);
@@ -561,7 +561,6 @@ sub create_pif_record {
 	    bail "Duplicate card key detected - please report: $f->{'outkey'}: ", map {$_->[0] . " "} @found	if @found > 1;
 	    push @to_notes, $f		if $f->{'keep'};
 
-	    my $key = $f->{'outkey'};
 	    my $def = $found[0];
 	    if (not defined $def) {
 		# this is not a 1Password field, but --addfields was specified, so add
@@ -610,6 +609,11 @@ sub create_pif_record {
 		    my $href = { 'n' => $f->{'outkey'}, 'k' => $def->[2], 't' => $def->[3], 'v' => $f->{'value'} };
 		    # add any attributes
 		    $href->{'a'} = { @$def[4..$#$def] }   if @$def > 4;
+		    
+		    # a little sanity check to ensure no null or empty string values get output to the 1PIF
+		    my @invalid = grep { not defined $href->{$_} or $href->{$_} eq '' } keys %$href;
+		    bail "Please report: unexpected undefined value for @invalid, entry $rec->{'title'}"		if @invalid;
+
 		    push @{$rec->{'_sections'}{join '.', 'secureContents', $def->[1]}}, $href;
 		}
 	    }
@@ -678,6 +682,12 @@ sub create_pif_record {
 
     # set the icon if one exists
     $rec->{'secureContents'}{'customIcon'} = $cmeta->{'icon'}	if $cmeta->{'icon'};
+
+    if (exists $cmeta->{'pwhistory'}) {
+	for (@{$cmeta->{'pwhistory'}}) {
+	    push @{$rec->{'secureContents'}{'passwordHistory'}}, { value => $_->[0], time => $_->[1] }
+	}
+    }
 
     # for output file comparison testing
     if ($main::opts{'testmode'}) {
@@ -902,6 +912,8 @@ sub get_items_from_1pif {
     my $file = shift;
     my @items;
 
+    # Be kind - append the data.1pif file name when the user supplied only the 1PIF directory name.
+    $file = join '/', $file, 'data.1pif'	if -d $file;
     my $data = slurp_file($file);
 
     # eliminate any extraneous UTF-8 BOM

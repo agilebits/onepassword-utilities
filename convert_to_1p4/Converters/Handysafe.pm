@@ -354,8 +354,7 @@ sub date2epoch {
     return defined $y ? timelocal(0, 0, 3, $d, $m - 1, $y): $_[0];
 }
 
-# String localization.  mSecure has localized card types and field names, so these must be mapped
-# to the localized versions in the Localizable.strings file for a given language.
+# String localization.
 # The %localized table will be initialized using the localized name as the key, and the english version
 # as the value.
 #

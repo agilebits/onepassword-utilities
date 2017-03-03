@@ -1,3 +1,60 @@
+Version 1.09:
+  New Converters:
+  - passwordsafe:	Password Safe (pwsafe) (converter name: passwordsafe).
+  - stickypassword:	Sticky Password (converter name: stickypassword).
+  - wallet4:		Subsembly Wallet 4X,4W
+  - truekey:		Intel True Key JSON converter (export supports logins only)
+  - keyfinder:		Key Finder (Mac Product Key Finder)
+
+  Fixed:
+  - Clarify SPB Wallet export section in the README file.
+  - Check for the existence of the export file before passing it onto the converter.
+  - Added tag list parameter to help output for --tag option.
+  - Added --tag option description to the README.
+  - Handle a possible "version" line in an iCloud keychain export for keychain converter.
+  - The roboform converter was not clearing the per-entry variable used to collect attibutes. Shame.
+  - The onepif2html converter was outputting unnecessary web form details for Login items.
+  - Avoid 'undefined' warning in safeincloud converter.
+  - In keychain converter, use 'type' = "note" to indicate a secure note instead of 'desc' whose
+    value string may be localized (and not 'secure note').
+  - Updated the README files to reflect 1Passwords new Import dialogs.
+  - Fixed some CSS and HTML errors in the onepif2html converter.
+  - The new wallet4 converter was not encoding the language file correctly (as UTF8).
+  - Converter keepass2 was in some cases incorrectly handling the status result of decompressing an
+    attachment, and in this case, was also prematurely aborting the import conversion, causing
+    the inability to create the 1PIF output file.
+  - Converter keepassx didn't handle timestamps with the value "Never" when --modified was in use.
+  - Converter passwordagent updated to support the new XML export format for versions above 2.6.3.
+  - Added converter onepif2html2 to the AppleScript Helper temporarily.  It is a temporary converter
+    producing expanded Secure Notes output, until a satisfactory output format is determined.
+  - Updates to the AppleScript Conversion Helper to work correctly on OS X Sierra.  Due to sandboxing,
+    the script now requires the convert_to_1p4 folder to be placed on the Desktop.  This hard-coded
+    path to the converter script folder simplifies user interaction.
+
+  New: 
+  - Added some additional debug code to the keychain converter to help track down an issue.
+  - Added password history support to PIF modules.
+  - Added initial support for Google Apps export of Contacts (vCards).
+  - The onepif2html converter will accept the 1PIF bundle directory name (and uses the file data.1pif
+    contained within).
+  - Converter keepass2 will store an entry's historic passwords (from the History element) into
+    1Password's Previously used passwords list.
+  - Converter csv now supports a CSV file containing Credit Card and Membership entries.  Currently
+    the converter supports Logins, Credit Cards, and Memberships, only one category per CSV file.
+  - AppleScript Conversion Helper now accepts additional command line options.
+
+  Changed:
+  - Updated two 1.08 log notes below: one spelling correction, and one correcting the location of
+    function normalize_card_data().
+  - Tighten username and password regular expressions in roboform converter.
+  - Updated the Strawberry Perl links in the README files to the latest Perl version, and simplified the
+    command line for installing the required modules.  A new batch script is used to install the modules
+    and set the working directory.
+
+  Internal Changes:
+  - Added an assertion to ensure that section entries never contain null values for key attributes.
+  - Removed some old, commented-out, no longer used code in the roboform converter.
+
 Version 1.08:
   New Converters:
   - RoboForm converter now available.
@@ -20,7 +77,7 @@ Version 1.08:
     library is available - see previous note).
   - Added more import types to handysafe converter; added a multiple field-matching system to assist
     category detection.
-  - The handysafe converter now has support for localalization (lang nl-nl).  More languages will be added
+  - The handysafe converter now has support for localization (lang nl-nl).  More languages will be added
     as requested.
   - Languages directory for per-converter language translation files.
   - Added output diagnostic to onepif2html converter to indicate the name of the created output file.
@@ -68,7 +125,7 @@ Version 1.08:
   - Simplify the lastpass converter's %card_field_specs table.
   - convert_to_1p4 will now accept and pass to a converter more than a single filename argument.
   - Modified the %card_field_specs table to include custom field definitions within the table.
-  - Made the normalize_card_data() function universal, and moved it to Utils::PIF.pm.
+  - Made the normalize_card_data() function universal, and moved it to Utils::Normalize.pm.
   - Code updates to work with Perl versions newer than the old requirement of Perl 5.16.
   - Debug output will include info about the export file supplied on the command line.
   - Many code cleanups.

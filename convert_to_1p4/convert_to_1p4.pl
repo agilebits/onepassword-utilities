@@ -18,7 +18,7 @@ use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.08";
+my $version = "1.09";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -79,7 +79,7 @@ my @opt_config = (
 	'imptypes|i=s' ],
     [ q{-o or --outfile <ofile>    # use file named ofile.1pif as the output file},
 	'outfile|o=s' ],
-    [ q{-t or --tags               # add one or more comma-separated tags to the record},
+    [ q{-t or --tags <list>        # add one or more comma-separated tags to the record},
        'tags|t=s' ],
     [ q{-v or --verbose            # output operations more verbosely},
 	'verbose|v'	=> sub { verbose_on() } ],
@@ -115,6 +115,8 @@ for my $impexp (qw/imp exp/) {
 	$opts{$impexp . 'types'} = \%t;
     }
 }
+
+-e $ARGV[0] or bail "The file '$ARGV[0]' does not exist.";
 
 # debugging aid
 print_fileinfo($ARGV[0])	if debug_enabled();

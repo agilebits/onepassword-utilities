@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Roboform 1.00;
+package Converters::Roboform 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -23,8 +23,8 @@ use Utils::Normalize;
 
 use HTML::Entities;
 
-my $username_re = qr/user(?:name|id)|User ID|email|xhv_le|^login$|loginname|login_name|^log$|uid|value\.login/;
-my $password_re = qr/pass|Password|xhv_lpw|pwd|loginpw|pword|pswd/;
+my $username_re = qr/^(?:(?:user|login)(?:[\s_]*(?:name|id))?|email|log|uid|value\.login)$/;
+my $password_re = qr/^(?:pass(?:word)?|pwd|loginpw|pword|pswd)$/i;
 
 my %card_field_specs = (
     address =>                  { textname => 'Address', fields => [
@@ -282,12 +282,6 @@ sub do_import {
 		}
 	    }
 
-=cut
-	    if (s/TD class=wordbreakfield .*? width="100%"[^>]*>(.+?)<\/TD><\/TR>//ms) {
-		$cmeta{'notes'} = clean $1;
-		debug "\tnotes => ", unfold_and_chop $cmeta{'notes'};
-	    }
-=cut
 	    my $itype = find_card_type(\@fieldlist, $identity_type);
 
 	    # skip all types not specifically included in a supplied import types list

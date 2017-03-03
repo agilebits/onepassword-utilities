@@ -1,8 +1,8 @@
-# Password Agent XML export converter
+# Password Safe XML export converter
 #
-# Copyright 2015 Mike Cappella (mike@cappella.us)
+# Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Passwordagent 1.02;
+package Converters::Passwordsafe 1.00;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -28,9 +28,10 @@ use Time::Piece;
 
 my %card_field_specs = (
     login =>                 { textname => undef, type_out => 'login', fields => [
-	[ 'username',		0, qr/^(account|userId)$/, ],
+	[ 'username',		0, qr/^username$/, ],
 	[ 'password',		0, qr/^password$/, ],
-	[ 'url',		0, qr/^link$/, ],
+	[ 'url',		0, qr/^url$/, ],
+	[ '_email',		0, qr/^email$/, ],
     ]},
     note =>                     { textname => '', fields => [
     ]},
@@ -38,7 +39,7 @@ my %card_field_specs = (
 
 $DB::single = 1;					# triggers breakpoint when debugging
 
-my $pa_version;
+my %groupid_map;
 
 sub do_init {
     return {
@@ -60,64 +61,50 @@ sub do_import {
 
     my $xp = XML::XPath->new(xml => $_);
 
-    my $datanode = $xp->findnodes('/data')->shift();
-    $pa_version = $datanode->getAttribute('ver_major');
-    if (defined $pa_version) {
-	bail "Unsupported Password Agent version"	if $pa_version < 2;
-    }
-    else {
-	$pa_version = $datanode->getAttribute('version');
-    }
+    my $root = $xp->find('/passwordsafe');
+    my $delimiter = $root->[0]->getAttribute('delimiter');
+    my $dbversion = $root->[0]->getAttribute('WhatSaved');
 
-    my ($topkey, $titlekey, $datemodifiedkey, @fields);
-    if ($pa_version eq '2') {
-	$topkey = '//entry';
-	$titlekey = 'name';
-	$datemodifiedkey = 'date_modified';
-	@fields = qw/name account password link note date_added date_modified date_expire/;
-    }
-    else {
-	$topkey = '//item';
-	$titlekey = 'title';
-	$datemodifiedkey = 'dateModified';
-	@fields = qw/title userId password link note dateAdded dateModified dateExpires/;
-    }
-
-    my $entrynodes = $xp->findnodes($topkey);
+    my $entrynodes = $xp->findnodes('//entry', $root);
     foreach my $entrynode (@$entrynodes) {
 	my (%cmeta, @fieldlist, @groups);
 
-	for (my $node = $entrynode->getParentNode(); my $parent = $node->getParentNode(); $node = $parent) {
-	    my $v = $xp->findvalue($titlekey, $node)->value();
-	    next if $v eq 'Root';
-	    unshift @groups, $v   unless $v eq '';
-	}
-	$cmeta{'tags'} = join '::', @groups;
-	$cmeta{'folder'} = [ @groups ];
-	debug 'Group: ', $cmeta{'tags'};
-
-	my $itype;
-	if ($pa_version eq '2') {
-	    # type: 0 == Login; 1 == Note
-	    $itype = $xp->findvalue('type', $entrynode)->value() == 1 ? 'note' : 'login';
-	}
-	else {
-	    $itype = $entrynode->getAttribute('kind');
-	}
+	my $itype = 'login';
 
 	# skip all types not specifically included in a supplied import types list
 	next if defined $imptypes and (! exists $imptypes->{$itype});
 
-	for (@fields) {
+	for (qw/group title username password url notes email rmtimex pmtimex ctimex pwhistory/) {
 	    my $val = $xp->findvalue($_, $entrynode)->value();
-	    if ($_ eq $titlekey) {
+	    if ($_ eq 'title') {
 		$cmeta{'title'} = $val // 'Untitled';
 	    }
-	    elsif ($_ eq 'note') {
+	    elsif ($_ eq 'notes') {
 		$cmeta{'notes'} = $val // '';
+		$cmeta{'notes'} =~ s/$delimiter/\n/g;
 	    }
-	    elsif ($_ eq $datemodifiedkey and $main::opts{'modified'}) {
-		$cmeta{'modified'} = date2epoch($val);
+	    elsif ($_ eq 'group') {
+		$cmeta{'tags'} = $val;
+		$cmeta{'folder'} = [ $val ];
+		debug 'Group: ', $cmeta{'tags'};
+	    }
+	    elsif ($_ =~ /^(?:rm|pm|c)timex$/ and $main::opts{'modified'}) {
+		# rmtimex: last modification time for non-password item
+		# pmtimex: last modification time for password
+		# ctime:   record's creation time
+		# use the most recent of the three to set the modified time
+		my $epochtime = date2epoch($val);
+		if (! defined $cmeta{'modified'} or $epochtime > $cmeta{'modified'}) {
+		    $cmeta{'modified'} = $epochtime
+		}
+	    }
+	    elsif ($_ eq 'pwhistory') {
+		my $historynodes = $xp->find('.//history_entry', $entrynode);
+		foreach my $historynode (@$historynodes) {
+		    my $pass = $xp->findvalue('oldpassword', $historynode)->value();
+		    my $time = $xp->findvalue('changedx',    $historynode)->value();
+		    push @{$cmeta{'pwhistory'}}, [ $pass, date2epoch($time) ];
+		}
 	    }
 	    else {
 		push @fieldlist, [ $_ => $val ];
@@ -145,22 +132,13 @@ sub do_export {
 }
 
 # Date converters
-#     d-mm-yyyy			keys: date_added, date_modified, date_expire		versions <= 2.6.3
-#     yyyy-mm-ddThh:mm:ss 	keys: dateAdded, dateModified, dateExpires		versions >  2.6.3
+#     yyyy-MM-DDThh:mm:ss
 sub parse_date_string {
     local $_ = $_[0];
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
 
-    if ($pa_version eq '2') {
-	#s#^(\d/\d{2}/\d{4})$#0$1#;
-	if (my $t = Time::Piece->strptime($_, "%m/%d/%Y")) {	# d/mm/yyyy
-	    return $t;
-	}
-    }
-    else {
-	if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%S")) {	# yyyy-mm-ddThh:mm:ss
-	    return $t;
-	}
+    if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%S")) {	# yyyy-MM-DDThh:mm:ss
+	return $t;
     }
 
     return undef;

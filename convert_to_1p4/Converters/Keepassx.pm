@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepassx 1.02;
+package Converters::Keepassx 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -134,6 +134,8 @@ sub find_card_type {
 sub parse_date_string {
     local $_ = $_[0];
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
+
+    return undef if $_ eq 'Never';
 
     if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%S")) {	# KeePassX dates are in standard UTC string format, no TZ
 	return $t;
