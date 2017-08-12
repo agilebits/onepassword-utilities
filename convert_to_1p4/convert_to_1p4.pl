@@ -3,6 +3,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
+use lib ".";
 use v5.14;
 use utf8;
 use strict;
