@@ -126,7 +126,7 @@ sub do_import {
 	    foreach my $histentrynode ($histentrynodes->get_nodelist) {
 		my $histentry_data = get_entrydata_from_entry('History element', $xp, $histentrynode, 1);
 		if (my @pw = grep { $_->[0] eq 'Password' } @{$histentry_data->{'kvpairs'}}) {
-		    if (my @time = grep { $_->[0] eq 'LastModificationtime' } @{$histentry_data->{'kvpairs'}}) {
+		    if (my @time = grep { $_->[0] eq 'LastModificationTime' } @{$histentry_data->{'kvpairs'}}) {
 			push @{$cmeta{'pwhistory'}}, [ $pw[0][1], date2epoch($time[0][1]) ];
 		    }
 		}
