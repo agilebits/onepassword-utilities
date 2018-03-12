@@ -85,6 +85,9 @@ sub do_import {
 		elsif ($main::opts{'modified'} and $_->[0] eq 'LastModificationTime') {
 		    $cmeta{'modified'} = date2epoch($_->[1]);
 		}
+		elsif ($_->[0] eq 'CreationTime') {
+			$cmeta{'createdAt'} = date2epoch($_->[1]);
+		}
 		else {
 		    push @fieldlist, [ $_->[0] => $_->[1] ];
 		}
@@ -123,7 +126,7 @@ sub do_import {
 	    foreach my $histentrynode ($histentrynodes->get_nodelist) {
 		my $histentry_data = get_entrydata_from_entry('History element', $xp, $histentrynode, 1);
 		if (my @pw = grep { $_->[0] eq 'Password' } @{$histentry_data->{'kvpairs'}}) {
-		    if (my @time = grep { $_->[0] eq 'LastModificationtime' } @{$histentry_data->{'kvpairs'}}) {
+		    if (my @time = grep { $_->[0] eq 'LastModificationTime' } @{$histentry_data->{'kvpairs'}}) {
 			push @{$cmeta{'pwhistory'}}, [ $pw[0][1], date2epoch($time[0][1]) ];
 		    }
 		}
@@ -200,7 +203,10 @@ sub get_entrydata_from_entry {
 	elsif ($gettimes and $element->getName eq 'Times') {
 	    my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
 	    debug "\tkey: LastModificationTime: '$mtime'";
-	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationtime' => $mtime ];
+	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationTime' => $mtime ];
+		$mtime = ($xp->findnodes('./CreationTime', $element))[0]->string_value;
+	    debug "\tkey: CreationTime: '$mtime'";
+	    push @{$entrydata{'kvpairs'}}, [ 'CreationTime' => $mtime ];
 	}
     }
 
