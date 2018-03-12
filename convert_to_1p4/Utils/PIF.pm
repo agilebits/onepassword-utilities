@@ -674,11 +674,16 @@ sub create_pif_record {
 
     # force updatedAt and createdAt to be ints, not strings
     if (exists $cmeta->{'modified'} and defined $cmeta->{'modified'}) {
-	$rec->{'updatedAt'} = 0 + $cmeta->{'modified'}	if $main::opts{'modified'};
+		$rec->{'updatedAt'} = 0 + $cmeta->{'modified'}	if $main::opts{'modified'};
+    }
+	if (exists $cmeta->{'createdAt'} and defined $cmeta->{'createdAt'}) {
+		$rec->{'createdAt'} = 0 + $cmeta->{'createdAt'};
     }
 
     # set the created time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
-    $rec->{'createdAt'} = 946713600		if $type eq 'login' and $main::opts{'watchtower'};
+	if ($type eq 'login' and $main::opts{'watchtower'}) {
+		$rec->{'createdAt'} = 946713600		
+	}
 
     # set the icon if one exists
     $rec->{'secureContents'}{'customIcon'} = $cmeta->{'icon'}	if $cmeta->{'icon'};

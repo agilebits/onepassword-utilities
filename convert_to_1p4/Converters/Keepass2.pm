@@ -85,6 +85,9 @@ sub do_import {
 		elsif ($main::opts{'modified'} and $_->[0] eq 'LastModificationTime') {
 		    $cmeta{'modified'} = date2epoch($_->[1]);
 		}
+		elsif ($_->[0] eq 'CreationTime') {
+			$cmeta{'createdAt'} = date2epoch($_->[1]);
+		}
 		else {
 		    push @fieldlist, [ $_->[0] => $_->[1] ];
 		}
@@ -200,7 +203,10 @@ sub get_entrydata_from_entry {
 	elsif ($gettimes and $element->getName eq 'Times') {
 	    my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
 	    debug "\tkey: LastModificationTime: '$mtime'";
-	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationtime' => $mtime ];
+	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationTime' => $mtime ];
+		$mtime = ($xp->findnodes('./CreationTime', $element))[0]->string_value;
+	    debug "\tkey: CreationTime: '$mtime'";
+	    push @{$entrydata{'kvpairs'}}, [ 'CreationTime' => $mtime ];
 	}
     }
 

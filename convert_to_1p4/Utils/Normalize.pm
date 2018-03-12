@@ -156,7 +156,7 @@ sub explode_normalized {
     my (%oc, $nc);
     # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
     if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes folder modified icon pwhistory/) {
+	for (qw/title tags notes folder modified createdAt icon pwhistory/) {
 	    # trigger the for() loop below
 	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
 	}
@@ -183,7 +183,7 @@ sub explode_normalized {
 	$added_title ||= myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
 	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
 
-	for (qw/tags notes folder modified icon pwhistory/) {
+	for (qw/tags notes folder modified createdAt icon pwhistory/) {
 	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
 	}
     }
