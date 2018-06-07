@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Passwordagent 1.02;
+package Converters::Passwordagent 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -44,9 +44,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -69,17 +66,19 @@ sub do_import {
 	$pa_version = $datanode->getAttribute('version');
     }
 
-    my ($topkey, $titlekey, $datemodifiedkey, @fields);
+    my ($topkey, $titlekey, $datemodifiedkey, $datecreatedkey, @fields);
     if ($pa_version eq '2') {
 	$topkey = '//entry';
 	$titlekey = 'name';
 	$datemodifiedkey = 'date_modified';
+	$datecreatedkey = 'date_added';
 	@fields = qw/name account password link note date_added date_modified date_expire/;
     }
     else {
 	$topkey = '//item';
 	$titlekey = 'title';
 	$datemodifiedkey = 'dateModified';
+	$datecreatedkey = 'dateAdded';
 	@fields = qw/title userId password link note dateAdded dateModified dateExpires/;
     }
 
@@ -116,8 +115,11 @@ sub do_import {
 	    elsif ($_ eq 'note') {
 		$cmeta{'notes'} = $val // '';
 	    }
-	    elsif ($_ eq $datemodifiedkey and $main::opts{'modified'}) {
+	    elsif ($_ eq $datemodifiedkey and not $main::opts{'notimestamps'}) {
 		$cmeta{'modified'} = date2epoch($val);
+	    }
+	    elsif ($_ eq $datecreatedkey and not $main::opts{'notimestamps'}) {
+		$cmeta{'created'} = date2epoch($val);
 	    }
 	    else {
 		push @fieldlist, [ $_ => $val ];

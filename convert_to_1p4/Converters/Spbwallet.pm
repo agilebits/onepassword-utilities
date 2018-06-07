@@ -4,7 +4,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Spbwallet 1.02;
+package Converters::Spbwallet 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -30,7 +30,7 @@ use Encode qw(decode encode);
 use Term::ReadKey;
 
 my %card_field_specs = (
-    bankacct =>                 { textname => 'Bank Account', type_out => 'bankacct', fields => [
+    bankacct =>                 { textname => 'Bank Account', fields => [
 	[ 'accountNo',		0, qr/^Account #$/, ],
 	[ 'routingNo',		0, qr/^Routing #$/, ],
 	[ 'telephonePin',	0, qr/^PIN$/, ],
@@ -54,7 +54,7 @@ my %card_field_specs = (
 	[ 'msn',		0, qr/^MSN$/, ],
 	[ 'aim',		0, qr/^AOL$/, ],
     ]},
-    creditcard =>               { textname => 'Credit Card', type_out => 'creditcard', fields => [
+    creditcard =>               { textname => 'Credit Card', fields => [
 	[ 'cardholder',		0, qr/^Owner$/, ],
 	[ 'ccnum',		0, qr/^Card #$/, ],
 	[ 'pin',		0, qr/^PIN$/, ],
@@ -65,7 +65,7 @@ my %card_field_specs = (
 	[ 'username',           0, qr/^User Name$/,			{ type_out => 'login' } ],
 	[ 'password',           0, qr/^Password$/,			{ type_out => 'login' } ],
     ]},
-    driverslicense =>           { textname => 'Driver License', type_out => 'driverslicense', fields => [
+    driverslicense =>           { textname => 'Driver License', fields => [
 	[ 'fullname',		0, qr/^Full Name$/, ],
 	[ 'number',		0, qr/^License #$/, ],
 	[ 'state',		0, qr/^State$/, ],
@@ -86,20 +86,17 @@ my %card_field_specs = (
 	[ 'member_name',	0, qr/^Owner$/, ],
 	[ 'company_name',	0, qr/^Airline$/, ],
 	[ 'pin',		0, qr/^PIN$/, ],
-	[ 'customer_service_phone',
-				0, qr/^Phone$/, ],
+	[ 'customer_service_phone', 0, qr/^Phone$/, ],
 	[ 'url',                0, qr/^Web Site$/,			{ type_out => 'login' } ],
 	[ 'username',           0, qr/^User Name$/,			{ type_out => 'login' } ],
 	[ 'password',           0, qr/^Password$/,			{ type_out => 'login' } ],
-
     ]},
     hosting =>                  { textname => 'Hosting', type_out => 'server', fields => [
 	[ 'url',                0, qr/^Web Site$/, ],
 	[ 'username',           0, qr/^User Name$/, ],
 	[ 'password',           0, qr/^Password$/, ],
 	[ '_os',           	0, qr/^OS$/, 				{ to_title => 'value' } ],
-	[ 'support_contact_phone',
-				0, qr/^Support Phn$/, ],
+	[ 'support_contact_phone', 0, qr/^Support Phn$/, ],
 	[ 'support_contact_url',0, qr/^Support Site$/, ],
     ]},
     idcard =>                   { textname => 'ID Card', type_out => 'membership', fields => [
@@ -123,7 +120,7 @@ my %card_field_specs = (
 	[ 'org_name',		0, qr/^Organization$/, ],
 	[ 'membership_no',	0, qr/^ID #$/, ],
 	[ 'phone',		0, qr/^Phone$/, ],
-	[ 'pin',		0, qr/^PIN\/Code$/, ],
+	[ 'pin',		0, qr/^PIN$/, ],
 	[ 'username',		0, qr/^User Name$/, 			{ type_out => 'login' } ],
 	[ 'password',		0, qr/^Password$/, 			{ type_out => 'login' } ],
 	[ 'url',		0, qr/^Web Site$/, 			{ type_out => 'login' } ],
@@ -135,7 +132,7 @@ my %card_field_specs = (
 	[ 'password',		0, qr/^Password$/, ],
 	[ 'url',		0, qr/^Web Site$/, ],
     ]},
-    passport =>                 { textname => 'Passport', type_out => 'passport', fields => [
+    passport =>                 { textname => 'Passport', fields => [
 	[ 'type',		0, qr/^Type$/, ],
 	[ 'number',		0, qr/^Passport #$/, ],
 	[ 'fullname',		0, qr/^Full Name$/, ],

@@ -1,11 +1,11 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::Utils 1.03;
+package Utils::Utils 1.04;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(pluralize myjoin bail debug verbose debug_on verbose_on debug_enabled print_record summarize_import
-		     unfold_and_chop flow hexdump fs_safe create_attachment slurp_file print_fileinfo);
+		     unfold_and_chop flow hexdump fs_safe create_attachment slurp_file print_fileinfo do_safe_shell_command);
 
 use v5.14;
 use utf8;
@@ -83,15 +83,16 @@ sub slurp_file {
 sub print_fileinfo {
     my $file = shift;
 
-    debug "Export file info";
+    debug "Export file info: \"$file\"";
     debug "\tsize: ", (stat($file))[7];
     if ($^O ne 'MSWin32') {
-	my $s = qx(/usr/bin/file --brief    "$file");
-	chomp $s;
-	debug "\tkind: $s";
-	$s = qx(/usr/bin/file --brief --mime "$file");
-	chomp $s;
-	debug "\tmime: $s";
+	my @lines = do_safe_shell_command('/usr/bin/file', '--brief', $file);
+	chomp $lines[0];
+	debug "\tkind: $lines[-1]";
+
+	@lines = do_safe_shell_command('/usr/bin/file', '--brief', '--mime', $file);
+	chomp $lines[0];
+	debug "\tmime: $lines[0]";
     }
 }
 
@@ -133,6 +134,7 @@ sub create_attachment {
 	warn "Failed to create new file for attachment: $filename\n$!";
 	return;;
     }
+    binmode FD;
     print FD $$data;
     close FD;
     verbose "Attachment created: $filename";
@@ -204,6 +206,18 @@ sub hexdump
         . '('
         . join(' ', map { sprintf("%02x", $_) } @internal_rep_bytes)
         . ')';
+}
+
+sub do_safe_shell_command {
+    my $cmd = shift;
+
+    my @lines = do {
+	open my $fh, "-|", $cmd, @_ or
+	    bail "Failed to spawn $cmd: $!";
+	<$fh>;
+    };
+
+    return @lines;
 }
 
 1;

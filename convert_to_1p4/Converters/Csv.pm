@@ -26,41 +26,79 @@ use Time::Piece;
 use Time::Local qw(timelocal);
 
 my %card_field_specs = (
+    bankacct =>			{ textname => '', fields => [
+	[ 'bankName',		1, qr/^Bank Name$/i, ],
+	[ 'owner',		1, qr/^Owner$/i, ],
+	[ 'accountType',	1, qr/^Account Type$/i, ],
+	[ 'routingNo',		1, qr/^Routing Number$/i, ],
+	[ 'accountNo',		1, qr/^Account Number$/i, ],
+	[ 'swift',		1, qr/^SWIFT$/i, ],
+	[ 'iban',		1, qr/^IBAN$/i, ],
+	[ 'telephonePin',	1, qr/^PIN$/i, ],
+	[ 'branchPhone',	0, qr/^Phone$/i, ],
+	[ 'branchAddress',	0, qr/^Address$/i, ],
+    ]},
+    identity =>			{ textname => '', fields => [
+	[ 'firstname',		1, qr/^First Name$/i, ],
+	[ 'initial',		1, qr/^Initial$/i, ],
+	[ 'lastname',		1, qr/^Last Name$/i, ],
+	[ 'sex',		1, qr/^Sex$/i, ],
+	[ 'birthdate',		1, qr/^Birth Date$/i, { func => sub { return date2epoch($_[0]) } } ],
+	[ 'occupation',		1, qr/^Occupation$/i, ],
+	[ 'company',		1, qr/^Company$/i, ],
+	[ 'department',		1, qr/^Department$/i, ],
+	[ 'jobtitle',		1, qr/^Job Title$/i, ],
+	[ '_address',		1, qr/^Address$/i, ],
+	[ 'defphone',		1, qr/^Default Phone$/i, ],
+	[ 'homephone',		1, qr/^Home Phone$/i, ],
+	[ 'cellphone',		1, qr/^Cell Phone$/i, ],
+	[ 'busphone',		1, qr/^Business Phone$/i, ],
+	[ 'username',		1, qr/^Default Username$/i, ],
+	[ 'reminderq',		1, qr/^Reminder Question$/i, ],
+	[ 'remindera',		1, qr/^Reminder Answer$/i, ],
+	[ 'email',		1, qr/^Email$/i, ],
+	[ 'website',		0, qr/^Website$/i, ],
+	[ 'icq',		1, qr/^ICQ$/i, ],
+	[ 'skype',		1, qr/^Skype$/i, ],
+	[ 'aim',		1, qr/^AIM$/i, ],
+	[ 'yahoo',		1, qr/^Yahoo$/i, ],
+	[ 'msn',		1, qr/^MSN$/i, ],
+	[ 'forumsig',		1, qr/^Forum Signature$/i, ],
+    ]},
     creditcard =>		{ textname => '', fields => [
-	[ 'title',		0, qr/^title$/i, ],
 	[ 'ccnum',		1, qr/^card number$/i, ],
 	[ 'expiry',		1, qr/^expires$/i, ],
 	[ 'cardholder',		1, qr/^cardholder$/i, ],
 	[ 'pin',		0, qr/^pin$/i, ],
 	[ 'bank',		1, qr/^bank$/i, ],
 	[ 'cvv',		1, qr/^cvv$/i, ],
-	[ 'notes',		0, qr/^notes$/i, ],
-	[ 'tags',		0, qr/^tags$/i, ],
     ]},
-
     login =>			{ textname => '', fields => [
-	[ 'title',		0, qr/^title$/i, ],
-	[ 'url',		1, qr/^website|url$/i, ],
-	[ 'username',		1, qr/^username$/i, ],
-	[ 'password',		1, qr/^password$/i, ],
-	[ 'notes',		0, qr/^notes$/i, ],
-	[ 'tags',		0, qr/^tags$/i, ],
+	[ 'url',		1, qr/^login url$/i, ],
+	[ 'username',		1, qr/^login username$/i, ],
+	[ 'password',		1, qr/^login password$/i, ],
     ]},
     membership =>		{ textname => '', fields => [
-	[ 'title',		0, qr/^title$/i, ],
 	[ 'org_name',		1, qr/^group$/i, ],
 	[ 'member_name',	1, qr/^member name$/i, ],
 	[ 'membership_no',	1, qr/^member id$/i, ],
-	[ 'expiry_date',	0, qr/^expiry date$/i,	{ func => sub { return date2monthYear($_[0], 2) } } ],
-	[ 'member_since',	1, qr/^member since$/i,	{ func => sub { return date2monthYear($_[0], 2) } }],
+	[ 'expiry_date',	1, qr/^expiration date$/i,	{ func => sub { return date2monthYear($_[0]) } } ],
+	[ 'member_since',	1, qr/^member since$/i,		{ func => sub { return date2monthYear($_[0]) } } ],
 	[ 'pin',		0, qr/^pin$/i, ],
 	[ 'phone',		0, qr/^telephone$/i, ],
-	[ 'username',		0, qr/^username$/i, 	{ type_out => 'login' } ],
-	[ 'password',		0, qr/^password$/i, 	{ type_out => 'login' } ],
-	[ 'url',		0, qr/^website|url$/i, 	{ type_out => 'login' } ],
-	[ 'notes',		0, qr/^notes$/i, ],
+	[ 'username',		1, qr/^membership username$/i, 	{ type_out => 'login' } ],
+	[ 'password',		1, qr/^membership password$/i, 	{ type_out => 'login' } ],
+	[ 'url',		1, qr/^membership url$/i, 	{ type_out => 'login' } ],
     ]},
     note =>			{ textname => '', fields => [
+    ]},
+    password =>			{ textname => '', fields => [
+	[ 'url',		1, qr/^password url$/i, ],
+	[ 'password',		1, qr/^password$/i, ],
+    ]},
+    socialsecurity =>		{ textname => '', fields => [
+	[ 'name',		0, qr/^name$/i, ],
+	[ 'number',		1, qr/^ss number$/i, ],
     ]},
 );
 
@@ -68,7 +106,17 @@ $DB::single = 1;					# triggers breakpoint when debugging
 
 my $custom_field_num = 1;
 
+my $t = gmtime;
+
 sub do_init {
+    # Add the standard meta-data entries (title, notes, tags, created, modified) to each entry
+    for my $type (keys %card_field_specs) {
+	for my $key (qw/title notes tags created modified/) {
+	    push @{$card_field_specs{$type}{'fields'}}, [ $key, 0,  qr/^${key}$/i ];
+	}
+    }
+
+    1;
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
@@ -89,15 +137,11 @@ sub do_import {
     open my $io, "<:encoding(utf8)", $file
 	or bail "Unable to open CSV file: $file\n$!";
 
-=cut
-    # remove BOM
-    my $bom;
-    (my $nb = read($io, $bom, 1) == 1 and $bom eq "\x{FEFF}") or
-	bail "Failed to read BOM from CSV file: $file\n$!";
-=cut
-
     my $column_names = $csv->getline($io) or
-	bail "Failed to parse CSV column names: $!";
+	bail "Failed to read the first line of the CSV file: $!";
+
+    # Remove a possible BOM
+    @{$column_names}[0] =~ s/^\x{FEFF}//	if @{$column_names}[0] =~ /^\x{FEFF}/;
 
     foreach (@$column_names) {
 	$_ =~ s/\s*$//;		# be kind - remove any trailing whitespace from column labels
@@ -124,7 +168,22 @@ sub do_import {
 	my (@fieldlist, %cmeta);
 	# save the special fields to pass to normalize_card_data below, and then remove them from the row.
 	for (keys %$col_names_to_pos) {
-	    $cmeta{$_} = $_ eq 'tags' ? [ split(/\s*,\s*/, $row->[$col_names_to_pos->{$_}]) ] :  $row->[$col_names_to_pos->{$_}];
+	    if ($_ eq 'tags') {
+		$cmeta{$_} = [ split /\s*,\s*/, $row->[$col_names_to_pos->{$_}] ];
+	    }
+	    elsif ($_ eq 'modified' or $_ eq 'created') {
+		# if the epoch date appears invalid, or timestamps are disabled, it will be added to @fieldlist instead of the metadata
+		if (not $main::opts{'notimestamps'} and validateEpochStr($row->[$col_names_to_pos->{$_}], $t->epoch)) {
+		    $cmeta{$_} = $row->[$col_names_to_pos->{$_}];
+		}
+		else {
+		    debug "Invalid $_ epoch date: ", $row->[$col_names_to_pos->{$_}]	unless $main::opts{'notimestamps'};
+		    push @fieldlist, [ $_ => $row->[$col_names_to_pos->{$_}] ];
+		}
+	    }
+	    else {
+		$cmeta{$_} = $row->[$col_names_to_pos->{$_}];
+	    }
 	}
 	# remove the special field values
 	for (sort { $b <=> $a } values %$col_names_to_pos) {
@@ -171,7 +230,7 @@ sub find_card_type {
 	    for (my $i = 0; $i <= $#$row; $i++) {
 		if (defined $cfs->[CFS_MATCHSTR] and $row->[$i] =~ /$cfs->[CFS_MATCHSTR]/ms) {
 		    $otype = $type	 			if $cfs->[CFS_TYPEHINT];
-		    $col_names_to_pos{$cfs->[CFS_FIELD]} = $i	if $cfs->[CFS_FIELD] =~ /^title|notes|tags$/;
+		    $col_names_to_pos{$cfs->[CFS_FIELD]} = $i	if $cfs->[CFS_FIELD] =~ /^(?:title|notes|tags|modified|created)$/;
 		}
 	    }
 	}
@@ -191,16 +250,23 @@ sub by_test_order {
 }
 
 
+# yyyy-mm-dd or yyyy/mm/dd	for birthdays
 # mm/yyyy
 # mmyyyy
 sub parse_date_string {
     local $_ = $_[0];
 
-    s/\///;
-
-    return undef unless /^\d{6}$/;
-    if (my $t = Time::Piece->strptime($_, "%m%Y")) {
-	return $t;
+    if (s/^(\d{4})[-\/](\d{2})[-\/](\d{2})$/$1-$2-$3/) {
+	if (my $t = Time::Piece->strptime($_, "%Y-%m-%d")) {	# KeePass 2 dates are in standard UTC string format
+	    return $t;
+	}
+    }
+    else {
+	s/\///;
+	return undef unless /^\d{6}$/;
+	if (my $t = Time::Piece->strptime($_, "%m%Y")) {
+	    return $t;
+	}
     }
 
     return undef;
@@ -209,6 +275,19 @@ sub parse_date_string {
 sub date2monthYear {
     my $t = parse_date_string @_;
     return defined $t->year ? sprintf("%d%02d", $t->year, $t->mon) : $_[0];
+}
+
+# epoch seconds to validate, epoch seconds Now
+sub validateEpochStr {
+    return undef	unless $_[0] =~ /^\d+$/;
+    return undef	unless $_[0] >= 0 and $_[0] <= $_[1];	# beween Jan 1 1970 and Now
+    return $_[0];
+}
+
+sub date2epoch {
+    my $t = parse_date_string @_;
+    return undef if not defined $t;
+    return defined $t->year ? 0 + timelocal(0, 0, 0, $t->mday, $t->mon - 1, $t->year): $_[0];
 }
 
 1;

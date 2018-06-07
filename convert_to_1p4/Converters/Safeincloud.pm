@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Safeincloud 1.03;
+package Converters::Safeincloud 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -28,21 +28,21 @@ use XML::XPath::XMLParser;
 my %icons;
 
 my %card_field_specs = (
-    code =>			{ textname => undef, icon => 'lock', type_out => 'login', fields => [
-	[ 'password',		1, qr/^Code$/, ],
+    code =>			{ textname => undef, icon => 'lock', type_out => 'note', fields => [
+	[ 'password',		1, qr/^Code$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'code', 'generate'=>'off' ] }],
     ]},
     creditcard =>		{ textname => undef, icon => 'credit_card', fields => [
 	[ 'ccnum',		0, qr/^Number$/, ],
-	[ 'cardholder',		1, qr/^Owner$/, ],
+	[ 'cardholder',		2, qr/^Owner$/, ],
 	[ '_expiry',		0, qr/^Expires$/, ],
-	[ 'cvv',		1, qr/^CVV$/, ],
+	[ 'cvv',		2, qr/^CVV$/, ],
 	[ 'pin',		0, qr/^PIN$/, ],
-	[ 'cc_blocking',	1, qr/^Blocking$/, ],
+	[ 'cc_blocking',	2, qr/^Blocking$/, ],
     ]},
     email =>			{ textname => undef, icon => 'email', type_out => 'login', fields => [
-	[ 'username',		0, qr/^Email$/, ],
-	[ 'password',		0, qr/^Password$/, ],
-	[ 'url',		0, qr/^Website$/, ],
+	[ 'username',		3, qr/^Email$/, ],
+	[ 'password',		3, qr/^Password$/, ],
+	[ 'url',		3, qr/^Website$/, ],
     ]},
     passport =>			{ textname => undef,  icon => 'id', fields => [
 	[ 'number',		0, qr/^Number$/, ],
@@ -52,26 +52,26 @@ my %card_field_specs = (
 	[ '_expiry_date',	0, qr/^Expires$/, ],
     ]},
     insurance =>		{ textname => undef,  icon => 'insurance', type_out => 'membership', fields => [
-	[ 'membership_no',	0, qr/^Number$/, ],
-	[ '_expiry',		0, qr/^Expires$/, ],
-	[ 'phone',		0, qr/^Phone$/, ],
+	[ 'membership_no',	3, qr/^Number$/, ],
+	[ '_expiry',		3, qr/^Expires$/, ],
+	[ 'phone',		3, qr/^Phone$/, ],
     ]},
     login =>			{ textname => undef,  fields => [
-	[ 'username',		0, qr/^Login$/, ],
-	[ 'password',		0, qr/^Password$/, ],
+	[ 'username',		2, qr/^Login$/, ],
+	[ 'password',		2, qr/^Password$/, ],
     ]},
     membership =>		{ textname => undef,  icon => 'membership', fields => [
-	[ 'membership_no',	0, qr/^Number$/, ],
-	[ 'pin',		0, qr/^Password$/, ],
-	[ 'website',		0, qr/^Website$/, ],
-	[ 'phone',		0, qr/^Phone$/, ],
+	[ 'membership_no',	3, qr/^Number$/, ],
+	[ 'pin',		3, qr/^Password$/, ],
+	[ 'website',		3, qr/^Website$/, ],
+	[ 'phone',		3, qr/^Phone$/, ],
     ]},
     note =>                     { textname => undef,  fields => [
     ]},
     webacct =>			{ textname => undef,  icon => 'web_site', type_out => 'login', fields => [
-	[ 'username',		0, qr/^Login$/, ],
-	[ 'password',		0, qr/^Password$/, ],
-	[ 'url',		0, qr/^Website$/, ],
+	[ 'username',		3, qr/^Login$/, ],
+	[ 'password',		3, qr/^Password$/, ],
+	[ 'url',		3, qr/^Website$/, ],
     ]},
 );
 
@@ -86,9 +86,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -139,9 +136,7 @@ sub do_import {
 	    my $icon = $cardnode->getAttribute('symbol');
 	    push @fieldlist, [ Color  => $cardnode->getAttribute('color') ];
 	    push @{$cmeta{'tags'}}, 'Stared'	if $cardnode->getAttribute('star') eq 'true';
-	    if ($main::opts{'modified'}) {
-		$cmeta{'modified'} =	date2epoch($cardnode->getAttribute('time_stamp'));
-	    }
+	    $cmeta{'modified'} = date2epoch($cardnode->getAttribute('time_stamp'))	unless $main::opts{'notimestamps'};
 
 	    my $itype = find_card_type(\@fieldlist, $icon);
 
@@ -174,13 +169,18 @@ sub find_card_type {
     my $type;
 
     for $type (sort by_test_order keys %card_field_specs) {
+	my ($nfound, @found);
 	for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 	    next unless $cfs->[CFS_TYPEHINT] and defined $cfs->[CFS_MATCHSTR];
 	    for (@$fieldlist) {
-		# type hint
+		# type hint, requires matching the specified number of fields
 		if ($_->[0] =~ $cfs->[CFS_MATCHSTR]) {
-		    debug "\ttype detected as '$type' (key='$_->[0]')";
-		    return $type;
+		    $nfound++;
+		    push @found, $_->[0];
+		    if ($nfound == $cfs->[CFS_TYPEHINT]) {
+			debug sprintf "type detected as '%s' (%s: %s)", $type, pluralize('key', scalar @found), join('; ', @found);
+			return $type;
+		    }
 		}
 	    }
 	}
@@ -201,10 +201,10 @@ sub find_card_type {
 
 # sort logins as the last to check
 sub by_test_order {
-    return  1 if $a eq 'webacct';
-    return -1 if $b eq 'webacct';
     return  1 if $a eq 'login';
     return -1 if $b eq 'login';
+    return  1 if $a eq 'webacct';
+    return -1 if $b eq 'webacct';
     $a cmp $b;
 }
 

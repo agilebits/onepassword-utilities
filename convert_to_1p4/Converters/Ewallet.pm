@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Ewallet 1.02;
+package Converters::Ewallet 1.03;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -96,10 +96,10 @@ my %card_field_specs = (
 	[ 'clothesglove',	1, qr/^(Glove):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
 	[ 'clothesother',	0, qr/^(Other) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
-    combolock =>                { textname => undef, type_out => 'password', fields => [
+    combolock =>                { textname => undef, type_out => 'note', fields => [
 	[ 'combolock',		1, qr/^(Lock):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'combolocation',	0, qr/^(Location):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],		# 7.64win no :
-	[ 'password',		1, qr/^(Combination) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'password',		1, qr/^(Combination) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'combination', 'generate'=>'off' ] }  ],
 	[ 'comboother',		0, qr/^(Other) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
     contact =>                  { textname => undef, type_out => 'note', fields => [
@@ -208,9 +208,9 @@ my %card_field_specs = (
 	[ 'org_name',		1, qr/^(Country or Organization) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
 	[ 'membership_no',	0, qr/^(ID Number)(?!:) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# note no :
 	[ 'member_name',	0, qr/^(Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'website',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
-	[ 'idusername',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'user name' ] } ],
-	[ 'pin',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
+	[ 'url',		0, qr/^(URL) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
+	[ 'username',		0, qr/^(User Name) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ type_out => 'login' } ],
+	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ 'phone',		0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
     insurance =>                { textname => undef, type_out => 'membership', fields => [
@@ -379,9 +379,9 @@ my %card_field_specs = (
 	[ 'password',		0, qr/^(Password) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,		{ type_out => 'login' } ],
 	[ '_phonenum',		0, qr/^(Phone Number) ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],
     ]},
-    voicemail =>           	{ textname => undef, type_out => 'password', fields => [
+    voicemail =>           	{ textname => undef, type_out => 'note', fields => [
 	[ 'vmaccessnum',	0, qr/^((?:Voice Mail )?Access Number):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],	# 7.64win no :, "Access Number"
-	[ 'password',		0, qr/^(Password):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
+	[ 'password',		0, qr/^(Password):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'password', 'generate'=>'off' ] } ], # 7.64win no :
 	[ 'vmplay',		1, qr/^(Play):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :
 	[ 'vmdelete',		1, qr/^(Delete):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],			# 7.64win no :
 	[ 'vmsave',		1, qr/^(Save):? ([^\x{0a}]+)(?:\x{0a}|\Z)/ms ],				# 7.64win no :

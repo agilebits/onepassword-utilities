@@ -2,7 +2,7 @@
 #
 # Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Keyfinder 1.03;
+package Converters::Keyfinder 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -23,23 +23,6 @@ use Utils::Normalize;
 
 use XML::XPath;
 use XML::XPath::XMLParser;
-
-
-=cut
-        [ 'product_version',    $sn_main,               $k_string,      'version' ],
-        [ 'reg_code',           $sn_main,               $k_string,      'license key',          'guarded'=>'yes', 'multiline'=>'yes' ],
-        [ 'reg_name',           $sn_customer,           $k_string,      'licensed to' ],
-        [ 'reg_email',          $sn_customer,           $k_email,       'registered email' ],
-        [ 'company',            $sn_customer,           $k_string,      'company' ],
-        [ 'download_link',      $sn_publisher,          $k_url,         'download page' ],
-        [ 'publisher_name',     $sn_publisher,          $k_string,      'publisher' ],
-        [ 'publisher_website',  $sn_publisher,          $k_url,         'website' ],
-        [ 'retail_price',       $sn_publisher,          $k_string,      'retail price' ],
-        [ 'support_email',      $sn_publisher,          $k_email,       'support email' ],
-        [ 'order_date',         $sn_order,              $k_date,        'purchase date' ],
-        [ 'order_number',       $sn_order,              $k_string,      'order number' ],
-        [ 'order_total',        $sn_order,              $k_string,      'order total' ],
-=cut
 
 # a list of title REs to skip
 my @ignored_titles = (

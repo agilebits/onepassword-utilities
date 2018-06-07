@@ -23,8 +23,220 @@ use Utils::Normalize;
 
 use HTML::Entities;
 
-my $username_re = qr/^(?:(?:user|login)(?:[\s_]*(?:name|id))?|email|log|uid|value\.login)$/;
-my $password_re = qr/^(?:pass(?:word)?|pwd|loginpw|pword|pswd)$/i;
+# Roboform does not use standardized Username and Password fields - rather, it uses the names of the
+# fields in the HTML form data for the web page login, and those strings get stored in the exported
+# HTML.  The tables below are used to define the regular expression patterns to match Usernames and
+# Passwords.  If you find you have unmatched Usernames or Passwords in your Login entries, you can add
+# new entries to the appropriate tables below.  You'll notice any such unmatched # key / value pairs
+# in the Notes section of the entry, or as custom fields if you are using the option --addfields.
+#
+# Add new patterns to the relevant tables below - these are regular expressions, and will automatically
+# be created as fully anchored patterns (beginning and end) of the string.  Place more specific entries
+# at the top of the tables (to be tried first) and less specific entries later. This helps provide the
+# best match opportunities.  The patterns below have been developed empirically over time, as reported
+# by users.
+# 
+# Note: the pattern matcher will reject username tokens with a variant of 'password' in them, to avoid
+# the situation where, for example, 'login_password' when matched as a username (the 'login' term could
+# match a username, but 'password' suggests its a password).
+
+# Username and Password regular expression patterns tables.
+my %userpass_REs = (
+    username_reject => [
+	qr/autologin/i,
+	qr/passwo?r?d/i,
+    ],
+    username => [
+	qr/^(?:user|login)(?:[-_\s]*(?:name|id))$/i,
+	qr/^webusername$/i,
+	qr/.*_login_username$/i,
+	qr/^login(?:name|user)[-_]?id$/i,
+	qr/^user_?name_\w+/i,
+	qr/^\w+_?user_?name$/i,
+	qr/^user$/i,
+	qr/^txtuserid$/i,
+	qr/^txtuser$/i,
+	qr/^login$/i,
+	qr/^[-_\w]*log[oi]nid$/i,
+	qr/^loginuser$/i,
+	qr/^login-user-name$/i,
+	qr/^\w+[-_]?login$/i,
+	qr/^\w+-login-id$/i,
+	qr/^loginInput$/i,
+	qr/^user-field$/i,
+	qr/^\w+_usernamefrm$/i,
+	qr/^usr_name_home$/i,
+	qr/^login-(appleid|account)$/i,
+	qr/^appleid$/i,
+	qr/^login_field$/i,
+	qr/^onlineid\d$/i,
+	qr/^txtloginname$/i,
+	qr/^(signinemailaddress|emailaddress)$/i,
+	qr/^(?:user|login)[-_]?email$/i,
+	qr/^login-email-address$/i,
+	qr/^inputemailhandle$/i,
+	qr/^adslaccount$/i,
+	qr/^\w*email[-_](?:\w+)$/i,
+	qr/^[-_\w-]*email(?:[-_]?id)?$/i,
+	qr/^e?mail$/i,
+	qr/^pwuser$/i,
+	qr/^uid$/i,
+	qr/^\w+_uid$/i,
+	qr/^loginquestion\w*$/i,
+	qr/^clientpin$/i,
+	qr/^\w*accountname$/i,
+	qr/^[-_\w]*userid[-_\w]*$/i,
+	qr/^wireless_num$/i,
+	qr/^membernametext$/i,
+	qr/^\w*username[-_\w]*$/i,
+	qr/^txtlogin$/i,
+	qr/^name$/i,
+	qr/^usernm$/i,
+	qr/^log$/i,
+	qr/^\w+_uname$/i,
+	qr/^[-_\w]*login-name[-_\w]*$/i,
+	qr/^address$/i,
+	qr/^memberid$/i,
+	qr/^[-_\w]*accountnumber$/i,
+	qr/^inusid$/i,
+	qr/^handle$/i,
+	qr/^\w*identifier$/i,
+	qr/use?r_name/i,
+	qr/loginemail/i,
+	qr/signinid/i,
+	qr/logincontrol/i,
+	qr/^(?:usr|id|ns|ui|u)$/i,
+    ],
+    password_reject => [
+	qr/_hint$/i,
+    ],
+    password => [
+	qr/^passwo?r?d$/i,
+	qr/.*login[-_]password$/i,
+	qr/^loginpassword$/i,
+	qr/^webupassword$/i,
+	qr/^loginpwd?$/i,
+	qr/^passwd_login?$/i,
+	qr/^userpwd$/i,
+	qr/^pwpwd$/i,
+	qr/^txtpwd$/i,
+	qr/^\w+-logon-password$/i,
+	qr/^passwordInput$/i,
+	qr/^(?:user|login)[-_]?pass$/i,
+	qr/^\w*loginpwd$/i,
+	qr/^(?:pass|txtpass|pword|pswd|pwd)$/i,
+	qr/^(?:log|u)pass$/i,
+	qr/password[_]?\w+/i,
+	qr/^[-_\w-]*password$/i,
+	qr/^password-field$/i,
+	qr/^\w+_password$/i,
+	qr/^usr_password_home$/i,
+	qr/^\w+_passwordfrm$/i,
+	qr/^passcode\d$/i,
+	qr/^adslpw$/i,
+	qr/^clientpw$/i,
+	qr/^\w*accountpw$/i,
+	qr/^[-_\w]*password[-_\w]*$/i,
+	qr/^\w+_psd$/i,
+	qr/^inpswd$/i,
+	qr/^\w*userpwd$/i,
+	qr/^[-_\w]*txtpin$/i,
+	qr/pass_word/i,
+	qr/^(?:pw|ps|up|p)$/i,
+    ],
+);
+
+=cut
+=cut
+
+# Language-specificmy strings, as found in the HTML
+my %category_strings = (
+    logins => [
+	'Rob&shy;oForm Logins List',			# English
+	'Liste der Rob&shy;oForm-An&shy;meldungen',	# German
+	'Rob&shy;oForm - Loginy',			# Polish
+
+    ],
+    safenotes => [
+	'Rob&shy;oForm Saf&shy;enotes List',		# English
+    ],
+    identities => [
+	'Rob&shy;oForm Ide&shy;ntities List',		# English
+    ],
+);
+
+=cut
+ consider how to handle these.
+
+_fieldformat$1#j_username##textfield-1015-inputEl:
+_fieldformat$1#j_password##textfield-1016-inputEl:
+
+_fieldformat$1#loginfmt##i0116:
+_fieldformat$1#passwd##i0118:
+
+ _fieldformat$1#login##i0116:
+_fieldformat$1#passwd##i0118:
+
+ _fieldformat$1#email##field:
+_fieldformat$1#password##field:
+
+ _fieldformat$1#loginname##text1:
+_fieldformat$1#loginpassword##text2:
+=cut
+
+sub userpass_matcher {
+    my ($kvpair, $key) = @_;
+
+    my $key_reject = $key . '_reject';
+
+    if ($key eq 'password' or $key eq 'username') {
+	my $token = $kvpair->[0];
+
+	# when the HTML contains fields named such as loginform[usernameemail], pull out the inner component
+	if ($token =~ /^[^[]+\[([^]]+)\]$/) {
+	    $token = $1;
+	}
+	# otherwise, split the components and use the last on
+	else {
+	    $token = (split /[#.:\$]/, $token)[-1];
+	}
+
+	debug "   attempting to match field token '$token' as a $key";
+	if ($token =~ /^\[[^\]]+\]$/) {
+	    debug "      rejecting bracketed token '$token' as a $key";
+	    return ();
+	}
+	if ($kvpair->[1] eq '*') {
+	    debug "      rejecting token '$token' as a $key because its value is '*'";
+	    return ();
+	}
+	if ($kvpair->[1] =~ /^([01])$/) {
+	    debug "      rejecting token '$token' as a $key because its value is '$1'";
+	    return ();
+	}
+
+	# rejection tests first
+	for (my $i = 0; $i < @{$userpass_REs{$key_reject}}; $i++) {
+	    debug "        $i: pattern reject test: $userpass_REs{$key_reject}[$i]";
+	    if ($token =~ $userpass_REs{$key_reject}[$i]) {
+		debug "\t\t pattern reject $i matched";
+		debug "      rejecting token '$token' as a $key because its in the reject list";
+		return ();
+	    }
+	}
+
+	for (my $i = 0; $i < @{$userpass_REs{$key}}; $i++) {
+	    debug "        $i: pattern test: $userpass_REs{$key}[$i]";
+	    if ($token =~ $userpass_REs{$key}[$i]) {
+		debug "\t\t pattern $i matched";
+		return ($token, $i + 1);
+	    }
+	}
+	debug "      NO match on field token '$token' as a $key";
+    }
+
+    return ();
+}
 
 my %card_field_specs = (
     address =>                  { textname => 'Address', fields => [
@@ -36,10 +248,10 @@ my %card_field_specs = (
         [ 'country',		0, qr/^Country$/, ],
     ]},
     authentication =>           { textname => 'Authentication', type_out => 'note', fields => [
-        [ 'favuserid',		0, qr/^Favorite User ID$/, ],
-        [ 'favpassword',	0, qr/^Favorite Password$/, ],
-        [ 'password_q',		0, qr/^Password Question$/, ],
-        [ 'password_a',		0, qr/^Password Answer$/, ],
+        [ 'favuserid',		0, qr/^Favorite User ID$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'favorite user id' ] } ],
+        [ 'favpassword',	0, qr/^Favorite Password$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'favorite password', 'generate'=>'off' ] } ],
+        [ 'password_q',		0, qr/^Password Question$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'password question' ] } ],
+        [ 'password_a',		0, qr/^Password Answer$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'password answer', 'generate'=>'off' ] } ],
     ]},
     bankacct =>                 { textname => 'Bank Account', fields => [
         [ 'bankName',		0, qr/^Bank Name$/, ],
@@ -113,9 +325,9 @@ my %card_field_specs = (
         [ '_expiry_date',	0, qr/^License Expires$/,	{ type_out => 'driverslicense' } ],	# see DL FIXUP
     ]},
     login =>                    { textname => undef, fields => [
-        [ 'url',		1, qr/url/, ],
-	[ 'username',           1, $username_re, ],
-	[ 'password',           1, $password_re, ],
+        [ 'url',		1, qr/url/i, ],
+	[ 'password',           1, \&userpass_matcher, ],
+	[ 'username',           1, \&userpass_matcher, ],
     ]},
     passport =>                 { textname => 'Passport', fields => [
         [ 'number',		0, qr/^Passport Number$/, ],
@@ -130,7 +342,9 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-        'opts'          => [],
+        'opts'          => [ [ q{      --windows            # export file is from Windows Roboform },
+                               'windows' ],
+                           ],
     };
 }
 
@@ -173,13 +387,33 @@ my %re_entry_type = (
     winv7 => qr#\A.*?<TR align=left width="100%">\s*<TD class=idsubcaption style="WORD-BREAK: break-all" colSpan=3>(.+?)</TD></TR>\s*#ms,
 );
 
+# Patterns used to detect the export type, per-plaform, per-Roboform release
+my %type_pats = (
+    winv7 => {
+	logins     => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">__TYPE_STRING__</P>',
+	safenotes  => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">__TYPE_STRING__</P>',
+	identities => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">__TYPE_STRING__</P>\s*<DIV class=preline>\s*',
+    },
+    winv6 => {
+	logins     => qr#<HEAD><TITLE>RoboForm Passcards List#,
+	safenotes  => qr#<HEAD><TITLE>RoboForm Safenotes List#,
+	identities => qr#<HTML><HEAD><TITLE>RoboForm Identities List.*?<TBODY>\s*#ms,
+    },
+    mac => {
+	safenotes  => sub { ! grep(/class="subcaption"/, $_[0]) },
+	logins     => sub { m#<TR align=left><TD class="caption" colspan=3>.+?</TD></TR>\s+<TR align=left><TD class="subcaption" colspan=3>.+?</TD></TR>#m },
+	identities => sub { m#^<TR align=left><TD class="caption" colspan=1>.*?</TD></TR>\s+<TR><TD style="border-left: 0 solid darkgray; border-right-width: 0;" valign=top align=left width="100%">\s+<TABLE width="100%">\s+<TR align=left><TD class="subcaption" colspan=3>Person#m },
+    }
+);
+
 sub do_import {
     my ($files, $imptypes) = @_;
     my %Cards;
     my $n = 1;
     my $entry_re;
 	 
-    #$^O = 'MSWin32';									# uncomment to test Win exports on OS X
+    # for debugging Windows exports on OS X
+    $^O = 'MSWin32'	if exists $main::opts{'windows'};
 
     for my $file (ref($files) eq 'ARRAY' ? @$files : $files) {
 	$_ = slurp_file($file, $^O eq 'MSWin32' ? 'UTF-16LE' : 'UTF-8');
@@ -287,6 +521,8 @@ sub do_import {
 	    # skip all types not specifically included in a supplied import types list
 	    next if defined $imptypes and (! exists $imptypes->{$itype});
 
+	    prioritize_fieldlist($itype, \@fieldlist)	if $itype eq 'login';
+
 	    my $normalized = normalize_card_data(\%card_field_specs, $itype, \@fieldlist, \%cmeta);
 	    my $cardlist   = explode_normalized($itype, $normalized);
 
@@ -339,9 +575,17 @@ sub find_card_type {
 	else {
 	    for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
 		for (@$fieldlist) {
-		    if ($cfs->[CFS_TYPEHINT] and $_->[0] =~ $cfs->[CFS_MATCHSTR]) {
-			debug "type detected as '$type' (key='$_->[0]')";
-			return $type;
+		    if ($cfs->[CFS_TYPEHINT]) {
+			if (ref $cfs->[CFS_MATCHSTR] eq 'CODE') {
+			    if (my @ret = $cfs->[CFS_MATCHSTR]->($_, $cfs->[0]) and $_->[1] ne '') {
+				debug "type detected as '$type' (pattern $ret[1], token='$ret[0]'	key='$_->[0]')";
+				return $type;
+			    }
+			}
+			elsif ($_->[0] =~ $cfs->[CFS_MATCHSTR]) {
+			    debug "type detected as '$type' (key='$_->[0]')";
+			    return $type;
+			}
 		    }
 		}
 	    }
@@ -351,6 +595,84 @@ sub find_card_type {
     debug "\t\ttype defaulting to 'note'";
     return 'note';
 }
+
+# For 'login' types, need to munge the fieldlist to downgrade fields that would result in duplicate matches
+# for a given key. For example, for the 'username' key, the HTML might contain form strings that result in
+# both of the tokens 'username' and 'email', each of which would match the 'username' patterns.
+# This will be done by modifying the field names of the lower priority entries such that they wont match in
+# the normalize_card_data() routine.
+#
+sub prioritize_fieldlist {
+    my ($type, $fieldlist) = @_;
+
+    for my $cfs (@{$card_field_specs{$type}{'fields'}}) {
+	debug "\tprioritizing key '$cfs->[0]'";
+
+	# Add the cfs key and weight to the fieldlist entry.  A weight of 0 is added for simple single-RE matches
+	for (@$fieldlist) {
+	    if (ref $cfs->[CFS_MATCHSTR] eq 'CODE') {
+		if (my @ret = $cfs->[CFS_MATCHSTR]->($_, $cfs->[0]) and $_->[1] ne '') {
+		    debug "\tCODE match (pattern \#$ret[1] token='$ret[0]', key='$_->[0]')";
+		    push @$_, ($cfs->[0], $ret[1]);		# add cfs key and weight
+		    next;
+		}
+	    }
+	    elsif ($_->[0] =~ $cfs->[CFS_MATCHSTR]) {
+		debug "\tRE match (pattern $cfs->[CFS_MATCHSTR], key='$_->[0]')";
+		push @$_, ($cfs->[0], 0);			# add cfs key and weight=0
+		next;
+	    }
+	}
+    }
+
+    my (%field_key_done, @newlist);
+    for (@$fieldlist) {
+	# fieldlist entries that don't match - nothing to do
+	if (not defined $_->[2]) {
+	    push @newlist, $_;
+	    next;
+	}
+
+	# skip already processed cfs keys
+	next if exists $field_key_done{$_->[2]};
+
+	# look for all fieldlist entries with the current key
+	my $key = $_->[2];
+	my @found = grep { defined $_->[2] and $_->[2] eq $key } @$fieldlist;
+
+	# single entries just go to the new list
+	if (@found == 1) {
+	    push @newlist, @found;
+	}
+
+	# adjust the field name of 1..N-th entries so they will not match later in normalize_card_data()
+	else {
+	    @found = sort {$a->[3] <=> $b->[3] } @found;
+	    for (my $i = 1; $i < @found; $i++) {
+		$found[$i][0] = '[' . $found[$i][0] . ']';
+	    }
+	    push @newlist, @found;
+	}
+
+	$field_key_done{$_->[2]}++;		# done with this cfs key
+    }
+
+    # Done with the original fieldlist, now create a new one with the (possibly modified) field, value pairs
+    @$fieldlist = ();
+    push @$fieldlist, [ $_->[0], $_->[1] ]	 for @newlist;
+}
+
+# Localize the REs used to detect the export type.  See the %category_strings table above.  Only valid currently for winv7.
+sub patch_langauage_strings {
+    my $vers = $rfinfo{'version'};
+    return unless $vers eq 'winv7';
+
+    for my $type (keys %{$type_pats{$vers}}) {
+	$type_pats{$vers}{$type} =~ s/__TYPE_STRING__/join '|', map { "(?:$_)" } @{$category_strings{$type}}/e;
+	$type_pats{$vers}{$type} = qr/$type_pats{$vers}{$type}/;
+    }
+}
+
 
 sub get_export_file_info {
     if    ($_[0] =~ /^<html>/) {		$rfinfo{'version'} = 'mac'; }
@@ -367,38 +689,23 @@ sub get_export_file_info {
     else {
 	$_[0] =~ s/^.*?<body>//ms;
 	$rfinfo{'pathsep_re'} = qr/\//;		# OS X and Win v7 use / as the folder separator
+
+	patch_langauage_strings();
     }
 
-    my %type_pats = (
-	winv7 => {
-	    logins     => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">Rob&shy;oForm Logins List</P>',
-	    safenotes  => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">Rob&shy;oForm Saf&shy;enotes List</P>',
-	    identities => '<P style="FONT-SIZE:.*; TEXT-ALIGN: center">Rob&shy;oForm Ide&shy;ntities List</P>\s*<DIV class=preline>\s*',
-	},
-	winv6 => {
-	    logins     => qr#<HEAD><TITLE>RoboForm Passcards List#,
-	    safenotes  => qr#<HEAD><TITLE>RoboForm Safenotes List#,
-	    identities => qr#<HTML><HEAD><TITLE>RoboForm Identities List.*?<TBODY>\s*#ms,
-	},
-	mac => {
-	    safenotes  => sub { ! grep(/class="subcaption"/, $_[0]) },
-	    logins     => sub { m#<TR align=left><TD class="caption" colspan=3>.+?</TD></TR>\s+<TR align=left><TD class="subcaption" colspan=3>.+?</TD></TR>#m },
-	    identities => sub { m#^<TR align=left><TD class="caption" colspan=1>.*?</TD></TR>\s+<TR><TD style="border-left: 0 solid darkgray; border-right-width: 0;" valign=top align=left width="100%">\s+<TABLE width="100%">\s+<TR align=left><TD class="subcaption" colspan=3>Person#m },
-	}
-    );
     for my $key (keys %{$type_pats{$rfinfo{'version'}}}) {
 	if (ref $type_pats{$rfinfo{'version'}}{$key} eq 'CODE') {
 	    $rfinfo{'type'} = $key 	if &{$type_pats{$rfinfo{'version'}}{$key}}($_[0]);
 	}
 	elsif ($_[0] =~ s#$type_pats{$rfinfo{'version'}}{$key}##) {
 	    $rfinfo{'type'} = $key;
+	    last;
 	}
     }
-    exists $rfinfo{'type'} or bail "Failed to detect file's type from Roboform $rfinfo{'version'} export file";
+    exists $rfinfo{'type'} or
+	bail "Failed to detect file's type from Roboform $rfinfo{'version'} export file";
 
     debug "RoboForm export version: $rfinfo{'version'}; type: $rfinfo{'type'}";
-
-
 }
 
 sub get_next_entry {

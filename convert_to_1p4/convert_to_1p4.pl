@@ -12,13 +12,16 @@ use warnings;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
+use FindBin qw($Bin);
+use lib ("$Bin/.", "$Bin/Modules");
+
 use Utils::PIF;
 use Utils::Utils;
 use Getopt::Long;
 use File::Basename;
 #use Data::Dumper;
 
-my $version = "1.09";
+my $version = "1.10";
 my $progstr = basename($0);
 
 my $show_full_usage_msg = 0;
@@ -29,7 +32,6 @@ my @save_ARGV = @ARGV;
 @ARGV == 1 and grep {$_ =~ /(^|\s)-(?:-help|h)\b/} @ARGV and Usage(0);
 grep {lc $ARGV[0] eq $_ } @converters or Usage(1, "Invalid converter specified");
 
-#@ARGV < 2 and Usage(1, "XMissing converter name");
 my $module_name = shift;
 my $module = "Converters::" . ucfirst lc $module_name;
 
@@ -60,13 +62,14 @@ for (qw/imp exp/) {
 
 our %opts = (
     outfile => join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P_import'),
-    watchtower => 1,
     folders => 0,			# folder creation is disabled by default
 ); 
 
 my @opt_config = (
     [ q{-a or --addfields          # add non-stock fields as custom fields },
        'addfields|a' ],
+    [ q{-c or --checkpass          # check for known breached passwords},
+	'checkpass|c' ],
     [ q{-d or --debug              # enable debug output},
 	'debug|d'	=> sub { debug_on() } ],
     [ q{-e or --exptypes <list>    # comma separated list of one or more export types from list below},
@@ -77,14 +80,14 @@ my @opt_config = (
 	'help|h'	=> sub { Usage(0) } ],
     [ q{-i or --imptypes <list>    # comma separated list of one or more import types from list below},
 	'imptypes|i=s' ],
+    [ q{      --notimestamps       # do not set record modified/creation timestamps},
+	'notimestamps' ],
     [ q{-o or --outfile <ofile>    # use file named ofile.1pif as the output file},
 	'outfile|o=s' ],
     [ q{-t or --tags <list>        # add one or more comma-separated tags to the record},
        'tags|t=s' ],
     [ q{-v or --verbose            # output operations more verbosely},
 	'verbose|v'	=> sub { verbose_on() } ],
-    [ q{      --nowatchtower       # do not set creation date for logins to trigger Watchtower checks},
-	'watchtower!'	=> sub { $opts{$_[0]} = $_[1] } ],
     [ q{},
 	'testmode' ],		# for output file comparison testing
 );
@@ -97,10 +100,13 @@ $show_full_usage_msg = 1;
     GetOptions(\%opts, map {(@$_)[1..$#$_]} @opt_config, @{$converter->{'opts'}})
 	or Usage(1);
 }
+debug "Runninng script from '$Bin'";
 debug "Command Line: @save_ARGV";
-@ARGV >= 1 or Usage(1, "Missing export_text_file name - please specify the file to convert");
+@ARGV == 0 and not exists $converter->{'files'} and
+    Usage(1, "Missing export_text_file name - please specify the file to convert");
 
-$opts{'outfile'} .= ".1pif"	if not $opts{'outfile'} =~ /\.1pif$/i;
+# add the 1pif suffix if it isn't already there.  The 'onepif' converter will override this.
+$opts{'outfile'} .= ".1pif"	if not $opts{'outfile'} =~ /\.\w{3,4}$/i;
 debug "Output file: ", $opts{'outfile'};
 
 for my $impexp (qw/imp exp/) {
@@ -116,10 +122,18 @@ for my $impexp (qw/imp exp/) {
     }
 }
 
--e $ARGV[0] or bail "The file '$ARGV[0]' does not exist.";
+# Check that the export file exists, unless the converter doesn't require one
+bail "The file '$ARGV[0]' does not exist."	if not exists $converter->{'files'} and ! -e $ARGV[0];
 
 # debugging aid
-print_fileinfo($ARGV[0])	if debug_enabled();
+if (debug_enabled()) {
+    if (exists $converter->{'files'}) {
+	print_fileinfo($_)		for ref($converter->{'files'}) eq 'ARRAY' ? @{$converter->{'files'}} : ($converter->{'files'});
+    }
+    else {
+	print_fileinfo($ARGV[0])
+    }
+}
 
 # import the wallet export data, and export the converted data
 do_export( do_import(@ARGV > 1 ? \@ARGV : $ARGV[0], $opts{imptypes} // undef), $opts{'outfile'}, $opts{'exptypes'} // undef);

@@ -1,7 +1,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Utils::Normalize 1.01;
+package Utils::Normalize 1.02;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(normalize_card_data explode_normalized add_custom_fields npre_explode npost_explode CFS_FIELD CFS_TYPEHINT CFS_MATCHSTR CFS_OPTS);
@@ -46,7 +46,7 @@ sub gen_field_key {
 #    valueorig	=> original field value
 #    outkey	=> exported field name
 #    outtype	=> field's output type (may be different than card's output type)
-#    keep	=> keep inkey:valueorig pair can be placed in notes
+#    keep	=> keep inkey:valueorig pair so it can be placed in notes
 #    as_title	=> set title to a value from the normalized card or a calc'd value
 #    to_title	=> append title with a value from the narmalized card or a calc'd value
 #
@@ -70,11 +70,18 @@ sub normalize_card_data {
 	    $inkey = $f;
 	}
 
+	debug "field: $inkey";
+
 	my ($h, @kv, @found);
 	for my $cfs (@{$card_field_specs->{$type}{'fields'}}) {
 	    if (ref $cfs->[CFS_MATCHSTR] eq 'Regexp') {
 		if ($inkey =~ $cfs->[CFS_MATCHSTR]) {
 		    push @kv,($1,$2)	if ref $f eq '';	# key/value capture groups are assumed in the %card_field_spec defs.
+		    push @found, $cfs;
+		}
+	    }
+	    elsif (ref $cfs->[CFS_MATCHSTR] eq 'CODE') {
+		if ($cfs->[CFS_MATCHSTR]->($f, $cfs->[0])) {
 		    push @found, $cfs;
 		}
 	    }
@@ -156,7 +163,7 @@ sub explode_normalized {
     my (%oc, $nc);
     # special case - Notes cards type have no 'fields', but $norm_card->{'notes'} will contain the notes
     if (not exists $norm_card->{'fields'}) {
-	for (qw/title tags notes folder modified icon pwhistory/) {
+	for (qw/title tags notes folder modified created icon pwhistory/) {
 	    # trigger the for() loop below
 	    $oc{'note'}{$_} = 1		if exists $norm_card->{$_} and defined $norm_card->{$_} and  $norm_card->{$_} ne '';
 	}
@@ -169,7 +176,6 @@ sub explode_normalized {
 
     # loop through each of the output card types, starting with the primary type
     # grab any to_title entries for the primary type and add these to the secondary entries
-    my $added_title;
     for my $type (sort { $b eq $itype } keys %oc) {
 	my $new_title;
 	# look for and use any title replacements
@@ -179,11 +185,11 @@ sub explode_normalized {
 	    debug "\t\tnew title for exploded card type '$type':  $new_title";
 	}
 
-	# add any supplimentatl title additions
-	$added_title ||= myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
+	# add any supplemental title additions
+	my $added_title = myjoin('', map { $_->{'to_title'} } @{$oc{$type}{'fields'}});
 	$oc{$type}{'title'} = ($new_title || $norm_card->{'title'} || 'Untitled') . $added_title;
 
-	for (qw/tags notes folder modified icon pwhistory/) {
+	for (qw/tags notes folder modified created icon pwhistory/) {
 	    $oc{$type}{$_} = $norm_card->{$_}	if exists $norm_card->{$_} and defined $norm_card->{$_} and $norm_card->{$_} ne '';
 	}
     }

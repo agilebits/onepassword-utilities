@@ -1,5 +1,3 @@
-# Copied directly from http://cpansearch.perl.org/src/MAKAMAKA/JSON-PP-2.27203/lib/JSON/PP.pm
-
 package JSON::PP;
 
 # JSON-2.0

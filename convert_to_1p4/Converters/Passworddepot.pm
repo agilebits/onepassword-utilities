@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Passworddepot 1.01;
+package Converters::Passworddepot 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -109,9 +109,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -169,8 +166,11 @@ sub do_import {
 		elsif ($f eq 'EXPIRYDATE' and ($itype eq 'software' or $v eq '00.00.0000')) {
 		    1;	# skip
 		}
-		elsif ($f eq 'LASTMODIFIED' and $main::opts{'modified'}) {
+		elsif ($f eq 'LASTMODIFIED' and not $main::opts{'notimestamps'}) {
 		    $cmeta{'modified'} = date2epoch($v);
+		}
+		elsif ($f eq 'CREATED' and not $main::opts{'notimestamps'}) {
+		    $cmeta{'created'} = date2epoch($v);
 		}
 		elsif ($f eq 'CUSTOMFIELDS') {
 		    if (my $customfieldnodes = $xp->findnodes('FIELD', $fieldnode)) {
@@ -256,13 +256,13 @@ sub ccard_type_to_name {
 
 # Date converters
 # Password Depot validates date input on Date types.  Dates are stored in several formats:
-#     mm/yyyy			fields: IDS_CardExpires
+#     mm[/.]yyyy		fields: IDS_CardExpires
 #     dd.mm.yyyy hh:mm:ss 	fields: LASTMODIFIED, CREATED, LASTACCESSED
 sub parse_date_string {
     local $_ = $_[0];
     my $when = $_[1] || 0;					# -1 = past only, 0 = assume this century, 1 = future only, 2 = 50-yr moving window
 
-    if (/^(?<m>\d{2})\/(?<y>\d{4})/) {		# mm/yyyy
+    if (/^(?<m>\d{2})[.\/](?<y>\d{4})/) {		# mm/yyyy or mm.yyyy
 	my $m = sprintf "%02d", $+{'m'};
 	if (check_date($+{'y'}, $m, 1)) {
 	    return ($+{'y'}, $m, 1);

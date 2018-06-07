@@ -86,7 +86,7 @@ sub do_import {
 	delete @$row{qw/name extra grouping/};
 
 	my @fieldlist;
-	# Everything that remains in the row is the the field data
+	# Everything that remains in the row is the field data
 	for (keys %$row) {
 	    debug "\tcust field: $_ => $row->{$_}";
 	    if ($itype eq 'note' and $row->{'url'} eq 'http://sn') {

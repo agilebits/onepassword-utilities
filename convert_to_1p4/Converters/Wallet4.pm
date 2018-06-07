@@ -2,7 +2,7 @@
 #
 # Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Wallet4 1.00;
+package Converters::Wallet4 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -42,7 +42,7 @@ my %card_field_specs = (
         [ 'username',		0, 'Account Login', 		{ type_out => 'login' } ],
         [ 'password',		0, 'Password', 			{ type_out => 'login' } ],
         [ 'branchPhone',	0, 'Phone Number', ],
-        [ 'callcenterpw',	1, 'Call Center Password', ],
+        [ 'callcenterpw',	1, 'Call Center Password', 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'call center pw', 'generate'=>'off' ] } ],
         [ 'iban',		1, 'IBAN', ],
         [ '_bic',		1, 'BIC', ],
     ]},
@@ -68,8 +68,8 @@ my %card_field_specs = (
 	[ 'username',		0, 'User ID', ],
 	[ 'password',		0, 'Password', ],
     ]},
-    numericcode =>              { textname => undef, type_out => 'password', fields => [
-	[ 'password',		1, 'Code', ],
+    numericcode =>              { textname => undef, type_out => 'note', fields => [
+	[ '_code',		1, 'Code', 			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'code', 'generate'=>'off' ] } ],
     ]},
     password =>                 { textname => undef, type_out => 'login', fields => [
 	[ 'username',		1, 'User', ],

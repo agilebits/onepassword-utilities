@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Splashid 1.04;
+package Converters::Splashid 1.05;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -54,8 +54,8 @@ my %card_field_specs = (
 	[ 'dress_size',		0, 'Dress Size', ],
 	[ 'ring_size',		0, 'Ring Size', ],
     ]},
-    combinations =>		{ textname => 'Combinations', type_out => 'login', fields => [
-	[ 'password',		0, 'Code', ],
+    combinations =>		{ textname => 'Combinations', type_out => 'note', fields => [
+	[ '_code',		0, 'Code', 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'code', 'generate'=>'off' ] } ],
     ]},
     creditcard =>		{ textname => 'Credit Cards', fields => [
 	[ 'ccnum',		0, 'Card #', ],
@@ -137,9 +137,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> qw/userdefined/,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     }
 }
 
@@ -288,7 +285,7 @@ sub do_import {
 	    if ($label eq 'Description') {
 		$cmeta{'title'} = $val;
 	    }
-	    elsif ($label eq 'Date Mod' and $main::opts{'modified'}) {
+	    elsif ($label eq 'Date Mod' and not $main::opts{'notimestamps'}) {
 		$cmeta{'modified'} = date2epoch($val);
 	    }
 	    else {

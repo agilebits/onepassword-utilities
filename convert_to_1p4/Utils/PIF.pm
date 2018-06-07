@@ -1,7 +1,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Utils::PIF 1.08;
+package Utils::PIF 1.09;
 
 our @ISA	= qw(Exporter);
 our @EXPORT	= qw(create_pif_record create_pif_file add_new_field clone_pif_field get_items_from_1pif typename_to_typekey prepare_icon);
@@ -28,7 +28,6 @@ BEGIN {
     $can_ImageMagick = 1 unless $@;
 }
 
-
 # UUID string used by the 1PIF format to separate individual entries.
 # DaveT: "You know what, I wish we had thought that far ahead and made this an Easter Egg of sorts.
 #         Alas, the truth isn't that exciting :-)"
@@ -36,42 +35,48 @@ BEGIN {
 my $agilebits_1pif_entry_sep_uuid_str = '***5642bee8-a5ff-11dc-8314-0800200c9a66***';
 
 our %typeMap = (
-    bankacct =>		{ typeName => 'wallet.financial.BankAccountUS',		title => 'Bank Account' },
-    bankacctau =>	{ typeName => 'wallet.financial.BankAccountAU',		title => 'Bank Account (AU)' },		# not currently supported
-    bankacctca =>	{ typeName => 'wallet.financial.BankAccountCA',		title => 'Bank Account (CA)' },		# not currently supported
-    bankacctch =>	{ typeName => 'wallet.financial.BankAccountCH',		title => 'Bank Account (CH)' },		# not currently supported
-    bankacctde =>	{ typeName => 'wallet.financial.BankAccountDE',		title => 'Bank Account (DE)' },		# not currently supported
-    bankacctuk =>	{ typeName => 'wallet.financial.BankAccountUK',		title => 'Bank Account (UK)' },		# not currently supported
-    creditcard =>	{ typeName => 'wallet.financial.CreditCard',		title => 'Credit Card' },
-    database =>		{ typeName => 'wallet.computer.Database',		title => 'Database' },
-    driverslicense =>	{ typeName => 'wallet.government.DriversLicense',	title => 'Drivers License' },
-    email =>		{ typeName => 'wallet.onlineservices.Email.v2',		title => 'Email' },
-    dotmac =>		{ typeName => 'wallet.onlineservices.DotMac',		title => 'MobileMe' },			# Legacy
-    emailv1 =>		{ typeName => 'wallet.onlineservices.Email',		title => 'Email (legacy)' },		# Legacy
-    ftp =>		{ typeName => 'wallet.onlineservices.FTP',		title => 'FTP' },			# Legacy
-    genericacct =>	{ typeName => 'wallet.onlineservices.GenericAccount',	title => 'Generic Account' },		# Legacy
-    instantmessenger =>	{ typeName => 'wallet.onlineservices.InstantMessenger',	title => 'Instant Messenger' },		# Legacy
-    isp =>		{ typeName => 'wallet.onlineservices.ISP',		title => 'Internet Provider' },		# Legacy
-    itunes =>		{ typeName => 'wallet.onlineservices.iTunes',		title => 'iTunes' },			# Legacy
-    amazons3 =>		{ typeName => 'wallet.onlineservices.AmazonS3',		title => 'Amazon S3' },			# Legacy
-    identity =>		{ typeName => 'identities.Identity',			title => 'Identity' },
-    login =>		{ typeName => 'webforms.WebForm',			title => 'Login' },
-    membership =>	{ typeName => 'wallet.membership.Membership',		title => 'Membership' },
-    note =>		{ typeName => 'securenotes.SecureNote',			title => 'Secure Note' },
-    outdoorlicense =>	{ typeName => 'wallet.government.HuntingLicense',	title => 'Outdoor License' },
-    passport =>		{ typeName => 'wallet.government.Passport',		title => 'Passport' },
-    password =>		{ typeName => 'passwords.Password',			title => 'Password' },
-    rewards =>		{ typeName => 'wallet.membership.RewardProgram',	title => 'Reward Program' },
-    server =>		{ typeName => 'wallet.computer.UnixServer',		title => 'Server' },
-    socialsecurity =>	{ typeName => 'wallet.government.SsnUS',		title => 'Social Security Number' },
-    software =>		{ typeName => 'wallet.computer.License',		title => 'Software License' },
-    wireless =>		{ typeName => 'wallet.computer.Router',			title => 'Wireless Router' },
+    bankacct =>		{ typeNum => '101', typeName => 'wallet.financial.BankAccountUS',		title => 'Bank Account' },
+    bankacctau =>	{ typeNum => undef, typeName => 'wallet.financial.BankAccountAU',		title => 'Bank Account (AU)' },		# not currently supported
+    bankacctca =>	{ typeNum => undef, typeName => 'wallet.financial.BankAccountCA',		title => 'Bank Account (CA)' },		# not currently supported
+    bankacctch =>	{ typeNum => undef, typeName => 'wallet.financial.BankAccountCH',		title => 'Bank Account (CH)' },		# not currently supported
+    bankacctde =>	{ typeNum => undef, typeName => 'wallet.financial.BankAccountDE',		title => 'Bank Account (DE)' },		# not currently supported
+    bankacctuk =>	{ typeNum => undef, typeName => 'wallet.financial.BankAccountUK',		title => 'Bank Account (UK)' },		# not currently supported
+    creditcard =>	{ typeNum => '002', typeName => 'wallet.financial.CreditCard',			title => 'Credit Card' },
+    database =>		{ typeNum => '102', typeName => 'wallet.computer.Database',			title => 'Database' },
+    driverslicense =>	{ typeNum => '103', typeName => 'wallet.government.DriversLicense',		title => 'Drivers License' },
+    email =>		{ typeNum => '111', typeName => 'wallet.onlineservices.Email.v2',		title => 'Email' },
+    dotmac =>		{ typeNum => undef, typeName => 'wallet.onlineservices.DotMac',			title => 'MobileMe' },			# Legacy
+    emailv1 =>		{ typeNum => undef, typeName => 'wallet.onlineservices.Email',			title => 'Email (legacy)' },		# Legacy
+    ftp =>		{ typeNum => undef, typeName => 'wallet.onlineservices.FTP',			title => 'FTP' },			# Legacy
+    genericacct =>	{ typeNum => undef, typeName => 'wallet.onlineservices.GenericAccount',		title => 'Generic Account' },		# Legacy
+    instantmessenger =>	{ typeNum => undef, typeName => 'wallet.onlineservices.InstantMessenger',	title => 'Instant Messenger' },		# Legacy
+    isp =>		{ typeNum => undef, typeName => 'wallet.onlineservices.ISP',			title => 'Internet Provider' },		# Legacy
+    itunes =>		{ typeNum => undef, typeName => 'wallet.onlineservices.iTunes',			title => 'iTunes' },			# Legacy
+    amazons3 =>		{ typeNum => undef, typeName => 'wallet.onlineservices.AmazonS3',		title => 'Amazon S3' },			# Legacy
+    identity =>		{ typeNum => '004', typeName => 'identities.Identity',				title => 'Identity' },
+    login =>		{ typeNum => '001', typeName => 'webforms.WebForm',				title => 'Login' },
+    membership =>	{ typeNum => '105', typeName => 'wallet.membership.Membership',			title => 'Membership' },
+    note =>		{ typeNum => '003', typeName => 'securenotes.SecureNote',			title => 'Secure Note' },
+    outdoorlicense =>	{ typeNum => '104', typeName => 'wallet.government.HuntingLicense',		title => 'Outdoor License' },
+    passport =>		{ typeNum => '106', typeName => 'wallet.government.Passport',			title => 'Passport' },
+    password =>		{ typeNum => '005', typeName => 'passwords.Password',				title => 'Password' },
+    rewards =>		{ typeNum => '107', typeName => 'wallet.membership.RewardProgram',		title => 'Reward Program' },
+    server =>		{ typeNum => '110', typeName => 'wallet.computer.UnixServer',			title => 'Server' },
+    socialsecurity =>	{ typeNum => '108', typeName => 'wallet.government.SsnUS',			title => 'Social Security Number' },
+    software =>		{ typeNum => '100', typeName => 'wallet.computer.License',			title => 'Software License' },
+    wireless =>		{ typeNum => '109', typeName => 'wallet.computer.Router',			title => 'Wireless Router' },
 );
+
+#    "006": true, // Document
 
 
 my %typenames_to_typekeys;	# maps typeName --> key from %typeMap above
+my %typenums_to_typeNames;	# maps typeNum  --> key from %typeMap above
 
-$typenames_to_typekeys{$typeMap{$_}{'typeName'}} = $_	for keys %typeMap;
+for (keys %typeMap) {
+    $typenames_to_typekeys{$typeMap{$_}{'typeName'}} = $_;
+    $typenums_to_typeNames{$typeMap{$_}{'typeNum'}} = $typeMap{$_}{'typeName'}		if defined $typeMap{$_}{'typeNum'};
+}
 
 sub typename_to_typekey {
     return $typenames_to_typekeys{$_[0]};
@@ -118,7 +123,6 @@ my %pif_table = (
 	[ 'bankName',	 	$sn_main,		$k_string,	'bank name' ], 
 	[ 'owner',	 	$sn_main,		$k_string,	'name on account' ], 
 	[ 'accountType', 	$sn_main,		$k_menu,	'type' ], 
-    # implement converter functions for above 'menu' type?
 	[ 'routingNo',	 	$sn_main,		$k_string,	'routing number' ], 
 	[ 'accountNo',	 	$sn_main,		$k_string,	'account number' ], 
 	[ 'swift',	 	$sn_main,		$k_string,	'SWIFT' ], 
@@ -580,19 +584,18 @@ sub create_pif_record {
 				'designation' => $f->{'outkey'}, name => $def->[3], 'type' => $def->[2], 'value' => $f->{'value'}
 			    };
 		    }
-		    elsif ($f->{'outkey'} eq 'url') {
-			push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $f->{'value'} };
-			# Need to add Location field so that the item appears in 1Password for Windows' extension.
-			$rec->{'location'} = $f->{'value'};
-		    }
 		}
 	    }
-	    elsif ($type eq 'password') {
+
+	    if ($type eq 'login' or $type eq 'password') {
 		if ($f->{'value'} ne '') {
 		    if ($f->{'outkey'} eq 'url') {
 			push @{$rec->{'secureContents'}{'URLs'}}, { 'label' => $def->[3], 'url' => $f->{'value'} };
 			# Need to add Location field so that the item appears in 1Password for Windows' extension.
 			$rec->{'location'} = $f->{'value'};
+		    }
+		    elsif ($f->{'outkey'} eq 'password' and $main::opts{'checkpass'}) {
+			do_password_check($f->{'value'}, $rec->{'title'}, $type, $cmeta);
 		    }
 		}
 	    }
@@ -606,6 +609,7 @@ sub create_pif_record {
 
 		# add entry to secureContents.sections when defined
 		if (defined $def->[1]) {
+
 		    my $href = { 'n' => $f->{'outkey'}, 'k' => $def->[2], 't' => $def->[3], 'v' => $f->{'value'} };
 		    # add any attributes
 		    $href->{'a'} = { @$def[4..$#$def] }   if @$def > 4;
@@ -615,6 +619,10 @@ sub create_pif_record {
 		    bail "Please report: unexpected undefined value for @invalid, entry $rec->{'title'}"		if @invalid;
 
 		    push @{$rec->{'_sections'}{join '.', 'secureContents', $def->[1]}}, $href;
+
+		    if ($main::opts{'checkpass'} and $href->{'k'} eq $k_concealed and $href->{'t'} =~ /\bpassword$/) {
+			do_password_check($href->{'v'}, $rec->{'title'}, $type, $cmeta);
+		    }
 		}
 	    }
 	    else {
@@ -672,13 +680,11 @@ sub create_pif_record {
 
     $rec->{'uuid'} = new_uuid();
 
-    # force updatedAt and createdAt to be ints, not strings
-    if (exists $cmeta->{'modified'} and defined $cmeta->{'modified'}) {
-	$rec->{'updatedAt'} = 0 + $cmeta->{'modified'}	if $main::opts{'modified'};
+    unless ($main::opts{'notimestamps'}) {
+	# Adding 0 force's updatedAt and createdAt to be ints, not strings
+	$rec->{'updatedAt'} = 0 + $cmeta->{'modified'}	if exists $cmeta->{'modified'} and defined $cmeta->{'modified'};
+	$rec->{'createdAt'} = 0 + $cmeta->{'created'}	if exists $cmeta->{'created'}  and defined $cmeta->{'created'};
     }
-
-    # set the created time to 1/1/2000 to help trigger Watchtower checks, unless --nowatchtower was specified
-    $rec->{'createdAt'} = 946713600		if $type eq 'login' and $main::opts{'watchtower'};
 
     # set the icon if one exists
     $rec->{'secureContents'}{'customIcon'} = $cmeta->{'icon'}	if $cmeta->{'icon'};
@@ -703,6 +709,13 @@ sub create_pif_file {
     my ($cardlist, $outfile, $types) = @_;
 
     check_pif_table();		# check the pif table since a module may have added (incorrect) entries via add_new_field()
+
+    # Load the password checking modude only when requested via the --checkpass option
+    if ($main::opts{'checkpass'}) {
+	eval "require Utils::PwCheck";
+	bail "PwCheck module load failure: $@"	if $@;
+	Utils::PwCheck::init();
+    }
 
     open my $outfh, ">", $outfile or
 	bail "Cannot create 1pif output file: $outfile\n$!";
@@ -732,7 +745,8 @@ sub create_pif_file {
     }
     close $outfh;
 
-    verbose "You may now import the file $outfile into 1Password"	if $ntotal
+    verbose "You may now import the file $outfile into 1Password"	if $ntotal;
+    report_pwcheck_results()	if $main::opts{'checkpass'};
 }
 
 sub add_to_folder_tree {
@@ -789,7 +803,7 @@ sub add_new_field {
 
     die "add_new_field: unsupported type '$type' in %pif_table"	if !exists $pif_table{$type};
 =cut
-    # code to add a field after a given fiend, but doesn't work in 1P
+    # code to add a field after a given field, but doesn't work in 1P
     my $i = 0;
     foreach (@{$pif_table{$type}}) {
 	if ($_->[0] eq $after) {
@@ -859,6 +873,64 @@ sub type_conversions {
 	    return ( $f->{'outkey'} => $matched[0] );
 	}
     }
+    elsif ($type eq $k_menu) {
+	if ($f->{'outtype'} =~ /^(?:bankacct|database|email|identity|wireless)$/) {
+	    my %menus = (
+		bankacct => {
+		    checking		=> qr/checking/i,
+		    savings		=> qr/savings/i,
+		    loc			=> qr/loc|line of credit/i,
+		    atm			=> qr/atm/i,
+		    money_market	=> qr/money market|mm/i,
+		    other		=> qr/other/i,
+		},
+		database => {
+		    db2			=> qr/db2/i,
+		    filemaker		=> qr/filemaker/i,
+		    msacces		=> qr/(?:microsoft\s*)?access/i,
+		    mssql		=> qr/ms\s*sql\s*se?rve?r?/i,
+		    mysql		=> qr/mysql/i,
+		    oracle		=> qr/oracle/i,
+		    postgresql		=> qr/postgresql/i,
+		    sqlite		=> qr/sqlite/i,
+		    other		=> qr/other/i,
+		},
+		email => {
+		    # type
+		    pop3		=> qr/^pop3?/i,
+		    imap		=> qr/^imap/i,
+		    either		=> qr/either/i,
+		    # security
+		    none		=> qr/none/i,
+		    SSL			=> qr/^ssl/i,
+		    TLS			=> qr/^tls/i,
+		    # authentication
+		    # none handled above
+		    password		=> qr/password|pw|pass/i,
+		    md5_challenge_response => qr/md5|challenge/i,
+		    kerberized_pop	=> qr/kerberized|kpop/i,
+		    kerberos_v4		=> qr/kerberos.*4/i,
+		    kerberos_v5		=> qr/kerberos.*5|gssapi/i,
+		    ntlm		=> qr/ntlm/i,
+		},
+		identity => {
+		    male		=> qr/m/i,
+		    female		=> qr/f/i,
+		},
+		wireless => {
+		    none		=> qr/none/i,
+		    wpa2p		=> qr/wpa2 per/i,
+		    wpa2e		=> qr/wpa2 ent/i,
+		    wpa			=> qr/^wpa$/i,
+		    wep			=> qr/^wep$/i,
+		},
+	    );
+
+	    if (my @matched = grep { $f->{'value'} =~ $menus{$f->{'outtype'}}{$_} } keys %{$menus{$f->{'outtype'}}}) {
+		return ( $f->{'outkey'} => $matched[0] );
+	    }
+	}
+    }
     elsif ($type eq $k_address and $f->{'outkey'} eq 'address') {
 	# address is expected to be in hash w/keys: street city state country zip 
 	my $h = $f->{'value'};
@@ -917,18 +989,105 @@ sub get_items_from_1pif {
     my $data = slurp_file($file);
 
     # eliminate any extraneous UTF-8 BOM
-    $data =~ s/^\x{ef}\x{bb}/\x{bf}/; 		#EF BB BF
+    #$data =~ s/^\x{ef}\x{bb}/\x{bf}/; 		#EF BB BF
+    $data =~ s/^\x{ef}\x{bb}\x{bf}//;
     utf8::encode($data);
 
     # reopen the file descriptor reading from $data
     open my $io,  "<:encoding(utf8)", \$data or
 	bail "Unable to reopen IO handle as a variable";
 
+    my $line = 0;
     while ($_ = <$io>) {
 	chomp $_;
+	$line++;
 	next if $_ eq $agilebits_1pif_entry_sep_uuid_str;
 	next if $_ =~ /"trashed":true[,}]/;		# skip items in the trash
-	push @items, decode_json $_;
+	my $json = decode_json $_;
+
+	### Conversion of 1p4 for Windows 1PIF into standardized 1PIF
+	###
+	if (exists $json->{'category'} or exists $json->{'details'} or exists $json->{'overview'}) {
+	    debug "Decoding 1p4 entry (line: $line): ", $json->{'overview'}{'title'} // 'Untitled';
+
+	    if (exists $json->{'category'}) {
+		bail "Unsupported category number $json->{'category'} - please report"	if not defined $typenums_to_typeNames{$json->{'category'}};
+		$json->{'typeName'} = $typenums_to_typeNames{$json->{'category'}};
+		delete $json->{'category'};
+	    }
+	    # details section
+	    if (exists $json->{'details'}) {
+		$json->{'secureContents'} = $json->{'details'};
+		delete $json->{'details'};
+	    }
+
+	    # overview section
+	    if (exists $json->{'overview'}{'title'}) {
+		$json->{'title'} = $json->{'overview'}{'title'};
+		delete $json->{'overview'}{'title'};
+	    }
+	    if (exists $json->{'overview'}{'ainfo'}) {
+		$json->{'secureContents'}{'notesPlain'} = $json->{'overview'}{'ainfo'};
+		delete $json->{'overview'}{'ainfo'};
+	    }
+	    if (exists $json->{'overview'}) {
+		$json->{'openContents'} = $json->{'overview'};
+		delete $json->{'overview'};
+	    }
+	    # created/update mapping
+	    for (qw/created updated/) {
+		if (exists $json->{$_}) {
+		    $json->{$_ . 'At'} = $json->{$_};
+		    delete $json->{$_};
+		}
+	    }
+
+	    # Delete empty key/value pairs
+	    for (keys %$json) {
+		delete $json->{$_}	if not defined $json->{$_} or $json->{$_} eq '';
+	    }
+	    if (exists $json->{'openContents'}) {
+		for (keys %{$json->{'openContents'}}) {
+		    delete $json->{'openContents'}{$_}	if not defined $json->{'openContents'}{$_} or $json->{'openContents'}{$_} eq '';
+		}
+	    }
+	    # Yuck.  1P4 for Windows outputs empty and null values for 'address' types.
+	    # These need to be removed so the XML parser doesn't choke.  Unfortunately, this
+	    # means splicing out the empty section entries in the various section arrays.
+	    if (exists $json->{'secureContents'}) {
+		for (keys %{$json->{'secureContents'}}) {
+		    delete $json->{'secureContents'}{$_}	if not defined $json->{'secureContents'}{$_} or $json->{'secureContents'}{$_} eq '';
+		}
+		if (exists $json->{'secureContents'}{'sections'}) {
+		    for (my $si = 0; $si < @{$json->{'secureContents'}{'sections'}}; $si++) {
+			my $s = $json->{'secureContents'}{'sections'}[$si];
+			if (exists $s->{'fields'}) {
+			    for (my $fi = 0; $fi < @{$s->{'fields'}}; $fi++) {
+				my $f = $s->{'fields'}[$fi];
+				if ($f->{'k'} eq 'address') {
+				    for my $k (keys %{$f->{'v'}}) {
+					delete $f->{'v'}{$k}	if not defined $f->{'v'}{$k} or $f->{'v'}{$k} eq '';
+				    }
+				    splice @{$s->{'fields'}}, $fi, 1 		if ! keys %{$f->{'v'}};
+				}
+			    }
+			}
+			splice @{$json->{'secureContents'}{'sections'}}, $si, 1 		if exists $s->{'fields'} and scalar(@{$s->{'fields'}}) == 0;
+		    }
+		}
+	    }
+	}
+	### end of 1p4 for Windows mappings
+	###
+	else {
+	    debug "Decoding entry (line: $line): ", $json->{'title'} || 'Untitled';
+	}
+
+	for (keys %$json) {
+	    delete $json->{$_}		if not defined $json->{$_} or $json->{$_} eq '';
+	}
+
+	push @items, $json;
     }
 
     close $io;
@@ -998,6 +1157,43 @@ sub bysections {
     return  1 if $a eq $full_sn_addfields;		# sort the section added by --addfields last
     return -1 if $b eq $full_sn_addfields;
     return $ordered_sections{$a} cmp $ordered_sections{$b};
+}
+
+# ------------------------------------------------------------------------------------------------
+# Code below only used when the --checkpass option has been supplied by the user - $main::opts{'checkpass'}.
+# The Utils::PwCheck module is only loaded when this option is supplied.
+#
+my $pwcheck_ncompromised = 0;
+my $pwcheck_tag		 = 'Password Compromised';
+sub do_password_check {
+    my ($pass, $title, $type, $cmeta) = @_;
+
+    return unless Utils::PwCheck::check_password($pass);
+
+    verbose '!!! ', $pwcheck_tag, ": $typeMap{$type}{'title'} item '$title', password: '$pass'";
+    add_tag ($cmeta, $pwcheck_tag);
+
+    $pwcheck_ncompromised++;
+}
+
+sub report_pwcheck_results {
+    $pwcheck_ncompromised and
+	verbose "!!!! $pwcheck_ncompromised passwords were found to be compromised - after you import into 1Password\n",
+	    "!!!! see the Tag '$pwcheck_tag'";
+}
+
+sub add_tag {
+    my $cmeta = shift;
+
+    if (! exists $cmeta->{'tags'}) {
+	$cmeta->{'tags'} = [ @_ ];
+    }
+    elsif (ref($cmeta->{'tags'}) eq 'ARRAY') {
+	push @{$cmeta->{'tags'}}, ( @_ );
+    }
+    else {
+	$cmeta->{'tags'} = [ $cmeta->{'tags'}, @_ ];
+    }
 }
 
 1;

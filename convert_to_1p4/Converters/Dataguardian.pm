@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Dataguardian 1.01;
+package Converters::Dataguardian 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -83,9 +83,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     }
 }
 
@@ -138,9 +135,11 @@ sub do_import {
 
 	$row->{'Date Modified'} = $row->{'Date and Time Modified'};	delete $row->{'Date and Time Modified'};
 	$row->{'Date Created'}  = $row->{'Date and Time Created'};	delete $row->{'Date and Time Created'};
-	if ($main::opts{'modified'}) {
+	unless ($main::opts{'notimestamps'}) {
 	    $cmeta{'modified'} = date2epoch($row->{'Date Modified'});
+	    $cmeta{'created'}  = date2epoch($row->{'Date Created'});
 	    delete $row->{'Date Modified'};
+	    delete $row->{'Date Created'};
 	}
 
 	my @fieldlist;

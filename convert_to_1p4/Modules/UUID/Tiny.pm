@@ -1,5 +1,3 @@
-# Copied directly from http://cpansearch.perl.org/src/CAUGUSTIN/UUID-Tiny-1.04/lib/UUID/Tiny.pm
-
 package UUID::Tiny;
 
 use 5.008;

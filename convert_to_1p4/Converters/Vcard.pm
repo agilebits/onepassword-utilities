@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Vcard 1.01;
+package Converters::Vcard 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -79,11 +79,8 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [],
 	'opts'		=> [ [ q{      --icon               # import vCard icons },
 			       'icon' ],
-			     [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
 			     [ q{      --securenote         # place vCard data into a Secure Note instead of Idenity},
 			       'securenote' ],
 			   ],
@@ -364,7 +361,7 @@ sub do_import {
 
 	    elsif ($prop eq 'REV') {
 		if ($v = get_prop_value($p, $prop)) {
-		    if ($main::opts{'modified'} and my $epoch = date2epoch($v)) {
+		    if (not $main::opts{'notimestamps'} and my $epoch = date2epoch($v)) {
 			$cmeta{'modified'} = $epoch;
 		    }
 		    else {
