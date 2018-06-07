@@ -2,7 +2,7 @@
 #
 # Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Passwordsplus 1.00;
+package Converters::Passwordsplus 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -88,8 +88,8 @@ my %card_field_specs = (
 	[ '_hi_claimph',	1, qr/^Claim Phone No\.$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'claim phone' ] } ],
     ]},
     homesecurity =>		{ textname => 'Home Security', type_out => 'note', fields => [
-	[ '_hs_pin',		0, qr/^PIN$/, ],
-	[ '_hs_challengepw',	1, qr/^Challenge Password$/, ],
+	[ '_hs_pin',		0, qr/^PIN$/, 			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
+	[ '_hs_challengepw',	1, qr/^Challenge Password$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'challenge password', 'generate'=>'off' ] } ],
 	[ '_hs_phonenum',	0, qr/^Phone Number$/, ],
 	[ '_hs_securityco',	1, qr/^Security Company$/, ],
 	[ '_hs_policeph',	1, qr/^Police Number$/, ],
@@ -109,13 +109,13 @@ my %card_field_specs = (
 	[ 'phone',		0, qr/^Phone$/, ],
     ]},
     prescription =>		{ textname => 'Prescriptions', type_out => 'note', fields => [
-	[ 'rxnumber',		1, qr/^Prescripion Number$/, ],
-	[ 'rxname',		1, qr/^Brand$/, ],
-	[ 'rxdoctor',		1, qr/^Doctor$/, ],
-	[ 'rxpharmacy',		1, qr/^Pharmacy$/, ],
-	[ 'rxphone',		0, qr/^Phone Number$/, ],
-	[ 'rxphone',		1, qr/^Pharmacy Phone$/, ],
-	[ 'rxphone',		1, qr/^Purchase Date$/, ],
+	[ '_rx_number',		1, qr/^Prescripion Number$/, ],
+	[ '_rx_brand',		1, qr/^Brand$/, ],
+	[ '_rx_doctor',		1, qr/^Doctor$/, ],
+	[ '_rx_pharmacy',	1, qr/^Pharmacy$/, ],
+	[ '_rx_phone',		0, qr/^Phone Number$/, ],
+	[ '_rx_phonepharm',	1, qr/^Pharmacy Phone$/, ],
+	[ '_rx_purchdate',	1, qr/^Purchase Date$/, ],
     ]},
     productinfo =>		{ textname => 'Product Information', type_out => 'note', fields => [
 	[ '_sn_description',	1, qr/^Description$/, ],
@@ -134,15 +134,15 @@ my %card_field_specs = (
 	[ '_vh_agentph',	1, qr/^Agent Phone Number$/, ],
     ]},
     voicemail =>		{ textname => 'Voice Mail', type_out => 'note', fields => [
-	[ '_vm_accessno',	1, qr/^Access No\.$/, ],
-	[ '_vm_pin',		1, qr/^PIN$/, ],
+	[ '_vm_accessno',	1, qr/^Access No\.$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'access #' ] } ],
+	[ '_vm_pin',		1, qr/^PIN$/, 		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
     ]},
     website =>			{ textname => 'Website', type_out => 'login', fields => [
 	[ 'username',		0, 'Username', ],
 	[ 'password',		0, 'Password', ],
 	[ 'url',		0, 'URL', ],
-	[ '_web_security_q',	1, 'Security Question', ],
-	[ '_web_security_a',	1, 'Security Answer', ],
+	[ '_web_security_q',	1, 'Security Question', { custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'security question' ] } ],
+	[ '_web_security_a',	1, 'Security Answer',	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'security answer', 'generate'=>'off' ] } ],
     ]},
 );
 

@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepass2 1.04;
+package Converters::Keepass2 1.05;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -45,9 +45,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -76,14 +73,17 @@ sub do_import {
 	    debug "ENTRY:";
 	    debug "Node: ", $entrynode->getName;
 
-	    my $entry_data = get_entrydata_from_entry('Element', $xp, $entrynode, $main::opts{'modified'});
+	    my $entry_data = get_entrydata_from_entry('Element', $xp, $entrynode, $main::opts{'notimestamps'});
 	    for (@{$entry_data->{'kvpairs'}}) {
 		next if $_->[1] eq '';
 		if ($_->[0] =~ /^Title|Notes$/) {
 		    $cmeta{lc $_->[0]} = $_->[1];
 		}
-		elsif ($main::opts{'modified'} and $_->[0] eq 'LastModificationTime') {
+		elsif ($_->[0] eq 'LastModificationTime' and not $main::opts{'notimestamps'}) {
 		    $cmeta{'modified'} = date2epoch($_->[1]);
+		}
+		elsif ($_->[0] eq 'CreationTime' and not $main::opts{'notimestamps'}) {
+		    $cmeta{'created'} = date2epoch($_->[1]);
 		}
 		else {
 		    push @fieldlist, [ $_->[0] => $_->[1] ];
@@ -104,7 +104,7 @@ sub do_import {
 		    if ($attachments{$_->{'id'}}->{'iscompressed'}) {
 			my $inf = new Compress::Raw::Zlib::Inflate('-WindowBits' => WANT_GZIP_OR_ZLIB) ;
 			my $status = $inf->inflate(decode_base64($attachments{$_->{'id'}}->{'data'}), $data);
-			if ($status eq Z_OK or $status eq Z_STREAM_END) {
+			if ($status == Z_OK or $status == Z_STREAM_END) {
 			    $dir = create_attachment(\$data, $dir, $_->{'filename'}, $cmeta{'title'});
 			}
 			else {
@@ -123,7 +123,7 @@ sub do_import {
 	    foreach my $histentrynode ($histentrynodes->get_nodelist) {
 		my $histentry_data = get_entrydata_from_entry('History element', $xp, $histentrynode, 1);
 		if (my @pw = grep { $_->[0] eq 'Password' } @{$histentry_data->{'kvpairs'}}) {
-		    if (my @time = grep { $_->[0] eq 'LastModificationtime' } @{$histentry_data->{'kvpairs'}}) {
+		    if (my @time = grep { $_->[0] eq 'LastModificationTime' } @{$histentry_data->{'kvpairs'}}) {
 			push @{$cmeta{'pwhistory'}}, [ $pw[0][1], date2epoch($time[0][1]) ];
 		    }
 		}
@@ -176,7 +176,7 @@ sub by_test_order {
 }
 
 sub get_entrydata_from_entry {
-    my ($type, $xp, $entrynode, $gettimes) = @_;
+    my ($type, $xp, $entrynode, $notimestamps) = @_;
 
     my %entrydata;
 
@@ -197,10 +197,14 @@ sub get_entrydata_from_entry {
 	    debug "\tAttachment $a{'id'}: '$a{'filename'}";
 	    push @{$entrydata{'attachments'}}, \%a;
 	}
-	elsif ($gettimes and $element->getName eq 'Times') {
+	elsif ($element->getName eq 'Times' and not $notimestamps) {
 	    my $mtime = ($xp->findnodes('./LastModificationTime', $element))[0]->string_value;
 	    debug "\tkey: LastModificationTime: '$mtime'";
-	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationtime' => $mtime ];
+	    push @{$entrydata{'kvpairs'}}, [ 'LastModificationTime' => $mtime ];
+
+	    my $ctime = ($xp->findnodes('./CreationTime', $element))[0]->string_value;
+	    debug "\tkey: CreationTime: '$ctime'";
+	    push @{$entrydata{'kvpairs'}}, [ 'CreationTime' => $ctime ];
 	}
     }
 

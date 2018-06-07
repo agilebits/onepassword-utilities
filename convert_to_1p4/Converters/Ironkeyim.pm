@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Ironkeyim 1.01;
+package Converters::Ironkeyim 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -43,9 +43,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -69,7 +66,7 @@ sub do_import {
 
     my $accountnodes = $xp->findnodes('//Accounts//Account');
     foreach my $accountnode (@$accountnodes) {
-	my (@card_group, $card_modified);
+	my @card_group;
 	my $itype = 'login';
 
 	my $nlogins = $accountnode->findvalue("count(Logins/*)");
@@ -100,9 +97,11 @@ sub do_import {
 		$cmeta{'notes'} = $accountnode->getAttribute('Comments');
 		$cmeta{'notes'} =~ s/\/n/\x0d\x0a/g;
 
-		if ($main::opts{'modified'}) {
+		unless ($main::opts{'notimestamps'}) {
 		    $cmeta{'modified'} = date2epoch($cardfields{'ModifiedDate'});
+		    $cmeta{'created'}  = date2epoch($cardfields{'CreatedDate'});
 		    delete $cardfields{'ModifiedDate'};
+		    delete $cardfields{'CreatedDate'};
 		}
 
 		push @fieldlist, [ $_ => $cardfields{$_} ]	 for keys %cardfields;		# no inherent field order

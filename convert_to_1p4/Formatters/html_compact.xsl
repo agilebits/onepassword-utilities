@@ -1,161 +1,3 @@
-# 1PIF to HTML converter
-#
-# Copyright 2015 Mike Cappella (mike@cappella.us)
-
-package Converters::Onepif2html 1.01;
-
-our @ISA 	= qw(Exporter);
-our @EXPORT     = qw(do_init do_import do_export);
-our @EXPORT_OK  = qw();
-
-use v5.14;
-use utf8;
-use strict;
-use warnings;
-#use diagnostics;
-
-binmode STDOUT, ":utf8";
-binmode STDERR, ":utf8";
-
-use Utils::PIF;
-use Utils::Utils;
-use Utils::Normalize;
-
-use JSON::PP;
-use XML::Simple;
-use XML::LibXSLT;
-use XML::LibXML;
-use Time::Piece;
-
-my $header	= qq/'1password data'/;
-
-my %card_field_specs = (
-    bankacct =>		{ textname => '', fields => [ ]},
-    creditcard =>	{ textname => '', fields => [ ]},
-    database =>		{ textname => '', fields => [ ]},
-    driverslicense =>	{ textname => '', fields => [ ]},
-    email =>		{ textname => '', fields => [ ]},
-    identity =>		{ textname => '', fields => [ ]},
-    login =>		{ textname => '', fields => [ ]},
-    membership =>	{ textname => '', fields => [ ]},
-    note =>		{ textname => '', fields => [ ]},
-    outdoorlicense =>	{ textname => '', fields => [ ]},
-    passport =>		{ textname => '', fields => [ ]},
-    password =>		{ textname => '', fields => [ ]},
-    rewards =>		{ textname => '', fields => [ ]},
-    server =>		{ textname => '', fields => [ ]},
-    socialsecurity =>	{ textname => '', fields => [ ]},
-    software =>		{ textname => '', fields => [ ]},
-    wireless =>		{ textname => '', fields => [ ]},
-);
-
-$DB::single = 1;					# triggers breakpoint when debugging
-
-sub do_init {
-    return {
-	'specs'		=> \%card_field_specs,
-	'imptypes'  	=> undef,
-	'opts'		=> [ ],
-    }
-}
-
-# Slurp the XSL from the DATA section 
-my $xsl_str = do { local $/; <DATA> };
-
-sub bycategory {
-    return -1 if $a->{'typeName'} eq 'webforms.WebForm';
-    return  1 if $b->{'typeName'} eq 'webforms.WebForm';
-    return $a->{'typeName'} cmp $b->{'typeName'}
-}
-
-my %exported;
-
-sub do_import {
-    my ($file, $imptypes) = @_;
-
-    my $itemsref = get_items_from_1pif $file;
-
-    # Imptypes / exptypes filtering - types are one to one in this converter
-    # Also, tally exports by type
-    my (@newlist, $n);
-    for (@$itemsref) {
-	# skip 1Password system types (folders, saved searches, ...)
-	next if $_->{'typeName'} =~ /^system\.folder\./;
-
-	my $typekey = typename_to_typekey($_->{'typeName'});
-	if (! defined $typekey) {
-	    say "Unknown typename: $_->{'typeName'}";
-	    $typekey = 'UNKNOWN';
-	    $n++;
-	}
-	else {
-	    next if $imptypes and ! exists $imptypes->{$typekey};
-	    $n++;
-	    next if exists $main::opts{'exptypes'} and ! exists $main::opts{'exptypes'}->{$typekey};
-	}
-	$exported{$typekey}++;
-	push @newlist, $_;
-    }
-    $itemsref = \@newlist;
-
-    my @items = sort bycategory @$itemsref;
-
-    my $xsimple = XML::Simple->new();
-    debug "Creating XML...\n";
-    my $xml_str = $xsimple->XMLout(\@items,
-		       NoAttr	=> 1,
-		       XMLDecl	=> '<?xml version="1.0" encoding="UTF-8"?>');
-
-    my $xml_parser  = XML::LibXML->new;
-    my $xslt_parser = XML::LibXSLT->new;
-    $xslt_parser->register_function("urn:perlfuncs", "epoch2date", \&epoch2date);
-
-    my $xml = eval { $xml_parser->parse_string($xml_str); }; die "XML parse failed: $@"	if $@;
-    my $xsl = eval { $xml_parser->parse_string($xsl_str); }; die "XSL parse failed: $@"	if $@;
-
-    my $stylesheet  = $xslt_parser->parse_stylesheet($xsl);
-    my $results     = $stylesheet->transform($xml, header => $header);
-    my $output      = $stylesheet->output_as_chars($results);
-
-    debug "\n", $output;
-    debug "Done\n";
-
-    summarize_import('item', $n);
-    return $output;
-}
-
-sub do_export {
-    my $output = shift;
-
-    my $outfile;
-    my $ntotal = 0;
-
-    if (%exported) {
-	$outfile = join($^O eq 'MSWin32' ? '\\' : '/', $^O eq 'MSWin32' ? $ENV{'USERPROFILE'} : $ENV{'HOME'}, 'Desktop', '1P_print.html');
-
-	open my $io, ">:encoding(utf8)", $outfile
-	    or bail "Unable to open 1PIF file: $outfile\n$!";
-	print $io $output;
-	close $io;
-
-	for my $type (keys %exported) {
-	    $ntotal += $exported{$type};
-	    verbose "Exported $exported{$type} $type ", pluralize('item', $exported{$type});
-	}
-    }
-
-    verbose "Exported $ntotal total ", pluralize('item', $ntotal);
-    verbose "You may now open the file $outfile with a browser"	if $ntotal
-}
-
-sub epoch2date {
-    my $t = localtime($_[0][0]->textContent);
-    return join ' ', $t->ymd, $t->hms;
-}
-
-1;
-
-__DATA__
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet id="stylesheet"
                 version="1.0"
@@ -168,12 +10,12 @@ __DATA__
 <xsl:template match="xsl:stylesheet" />
   
 <xsl:template match="/">
-    <html>
+  <html>
     <head>
-    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
-    <meta http-equiv="Cache-Control" content="no-store" />
-    <title><xsl:value-of select="$header"/></title>
-    <style type="text/css">
+      <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+      <meta http-equiv="Cache-Control" content="no-store" />
+      <title><xsl:value-of select="$header"/></title>
+      <style type="text/css">
 	.fieldname { color: #187ee6; font-size:smaller; vertical-align: text-top; padding: 0; margin: 0; }
 	.sectiontitle { color: #00a688; font-size: larger; font-variant: small-caps; }
 	.item { border: solid 1px #dddddd; margin: 0px 0px 1px 0px; padding: 0px 1px 0px 1px; background: #fff; }
@@ -188,7 +30,7 @@ __DATA__
 	th { font-weight: bold; font-size: 9pt; border: solid black 1px; }
 	td { font-size: 9pt; border: solid black 1px;}
 	tr { page-break-inside:avoid; page-break-after:auto; }
-    </style>
+      </style>
     </head>
     <body>
 	<h2><xsl:value-of select="$header"/></h2>
@@ -338,11 +180,12 @@ __DATA__
     <div class="item">
 	<ul>
 	    <xsl:apply-templates select="title" />
-	    <xsl:apply-templates select="secureContents/sections" />
 	    <xsl:apply-templates select="secureContents/fields" />
 	    <xsl:apply-templates select="secureContents/URLs" />
+	    <xsl:apply-templates select="secureContents/sections" />
 	    <xsl:apply-templates select="openContents[tags]" />
 	    <xsl:apply-templates select="secureContents/notesPlain" />
+	    <xsl:apply-templates select="secureContents" />
 	    <xsl:apply-templates select="createdAt" />
 	    <xsl:apply-templates select="updatedAt" />
 	</ul>
@@ -372,15 +215,15 @@ __DATA__
 
 <!-- openContents -->
 <xsl:template match="openContents">
-    <li>
-	<xsl:if test="tags">
+    <xsl:if test="tags">
+	<li>
 	    <span class="fieldname">tags: </span>
 	    <xsl:for-each select="tags">
 		<xsl:value-of select="." />
 		<xsl:if test="position() != last()">, </xsl:if>
 	    </xsl:for-each>
-	</xsl:if>
-    </li>
+	</li>
+    </xsl:if>
 </xsl:template>
 
 <!-- secureContents -->
@@ -425,7 +268,9 @@ __DATA__
 
 <xsl:template match="secureContents/sections">
     <xsl:if test="title != ''">
-	<span class="sectiontitle">&lt;<xsl:value-of select="title" />&gt; </span>
+	<xsl:if test="*[3]">
+	    <span class="sectiontitle">&lt;<xsl:value-of select="title" />&gt; </span>
+	</xsl:if>
     </xsl:if>
 
     <xsl:for-each select="fields">
@@ -441,10 +286,27 @@ __DATA__
 		    <xsl:text>:</xsl:text>
 		    <xsl:text disable-output-escaping="yes">&amp;</xsl:text>nbsp;
 		</span>
-		<xsl:value-of select = "v" />
+		<xsl:choose>
+		    <xsl:when test="k='date'"><xsl:value-of select="perlfuncs:epoch2date(./v, 1)" /></xsl:when>
+		    <xsl:when test="k='monthYear'"><xsl:value-of select="perlfuncs:monthYear(./v)" /></xsl:when>
+		    <xsl:when test="k='address'"><xsl:value-of select="perlfuncs:address2str(./v)" /></xsl:when>
+		    <xsl:otherwise><xsl:value-of select = "v" /></xsl:otherwise>
+		</xsl:choose>
 	    </li>
 	</xsl:if>
     </xsl:for-each>
+</xsl:template>
+
+<xsl:template match="secureContents">
+    <xsl:if test="Linked_Items">
+	<li>
+	    <span class="fieldname">related_items: </span>
+	    <xsl:for-each select="Linked_Items">
+		<xsl:value-of select="." />
+		<xsl:if test="position() != last()">, </xsl:if>
+	    </xsl:for-each>
+	</li>
+    </xsl:if>
 </xsl:template>
 
 <xsl:template match="secureContents/notesPlain">

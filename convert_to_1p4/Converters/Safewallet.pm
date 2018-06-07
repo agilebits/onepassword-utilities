@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Safewallet 1.01;
+package Converters::Safewallet 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -64,7 +64,7 @@ my %card_field_specs = (
 	[ 'callcardprovider',	0, qr/^Provider$/, ],
 	[ 'callcardaccessnum',	1, qr/^Access #$/, ],
 	[ 'callcardnum',	0, qr/^Card #$/, ],
-	[ 'callcardpin',	0, qr/^PIN$/, ],
+	[ 'callcardpin',	0, qr/^PIN$/, 			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
 	[ 'callcardphone',	0, qr/^If Lost$/, ],
 	[ 'callcardusage',	1, qr/^Usage$/, ],
     ]},
@@ -92,13 +92,13 @@ my %card_field_specs = (
 	[ 'clothingglove',	1, qr/^Glove$/, ],
     ]},
     contact =>			{ textname => undef, type_out => 'note', fields => [
-	[ 'contact',		0, qr/^First Name$/, ],
-	[ 'contact',		0, qr/^Last Name$/, ],
-	[ 'contact',		0, qr/^Company$/, ],
-	[ 'contact',		1, qr/^Mobile Phone$/, ],
-	[ 'contact',		1, qr/^Home Phone$/, ],
-	[ 'contact',		1, qr/^Business Phone$/, ],
-	[ 'contact',		0, qr/^Email$/, ],
+	[ '_firstname',		0, qr/^First Name$/, ],
+	[ '_lastname',		0, qr/^Last Name$/, ],
+	[ '_company',		0, qr/^Company$/, ],
+	[ '_phonecell',		1, qr/^Mobile Phone$/, ],
+	[ '_phonehome',		1, qr/^Home Phone$/, ],
+	[ '_phonebiz',		1, qr/^Business Phone$/, ],
+	[ '_email',		0, qr/^Email$/, ],
     ]},
     creditcard =>		{ textname => undef, fields => [
 	[ 'type',		0, qr/^Card$/, ],

@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Keepassx 1.03;
+package Converters::Keepassx 1.04;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -43,9 +43,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -82,8 +79,11 @@ sub do_import {
 	    for (qw/username password url lastaccess lastmod creation expire/) {
 		my $val = $xp->findvalue($_, $entrynode)->value();
 		next if $val eq '';
-		if ($main::opts{'modified'} and $_ eq 'lastmod') {
+		if ($_ eq 'lastmod' and not $main::opts{'notimestamps'}) {
 		    $cmeta{'modified'} = date2epoch($val);
+		}
+		elsif ($_ eq 'creation' and not $main::opts{'notimestamps'}) {
+		    $cmeta{'created'} = date2epoch($val);
 		}
 		else  {
 		    push @fieldlist, [ $_ => $val ];		# retain field order

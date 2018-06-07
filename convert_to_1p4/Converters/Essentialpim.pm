@@ -93,7 +93,7 @@ sub do_import {
 	    splice @$row, $_, 1;
 	}
 
-	# everything that remains in the row is the the field data
+	# everything that remains in the row is the field data
 	for (my $i = 0; $i <= $#$column_names; $i++) {
 	    debug "\tcust field: $column_names->[$i] => $row->[$i]";
 	    push @fieldlist, [ $column_names->[$i] => $row->[$i] ];		# retain field order

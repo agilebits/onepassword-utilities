@@ -2,7 +2,7 @@
 #
 # Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Stickypassword 1.00;
+package Converters::Stickypassword 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -174,9 +174,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -199,7 +196,7 @@ sub do_import {
     my @entries = get_all_entries($xp);
     while (my $e = shift @entries) {
 	my $itype	= $e->{'itype'};
-	my @fieldlist	= @{$e->{'fieldlist'}};
+	my @fieldlist	= exists $e->{'fieldlist'} ? @{$e->{'fieldlist'}} : ();
 	my %cmeta	= %{$e->{'cmeta'}};
 
 	# skip all types not specifically included in a supplied import types list
@@ -249,8 +246,9 @@ sub get_all_entries {
     foreach my $node (@$nodes) {
 	my $reallogin   = $node->getAttribute('RealLogin');
 	my $description = $node->getAttribute('Name');
-	my $username = $reallogin eq '' ? $description : $reallogin;
-	$logins{$node->getAttribute('ID')} = [ $username, $node->getAttribute('Password'), $reallogin ne '' ? $description : undef ];
+	my $username = (not defined $reallogin or $reallogin eq '') ? $description : $reallogin;
+	$logins{$node->getAttribute('ID')} = [ $username, $node->getAttribute('Password'), 
+	    (defined $reallogin and $reallogin ne '') ? $description : undef ];
 	debug "\tprocessed login: ", $logins{$node->getAttribute('ID')}[0];
     }
 
@@ -260,7 +258,8 @@ sub get_all_entries {
 	my %e;
 	set_common_attributes($node, \%e, \%groups);
 	my $url   =  $node->getAttribute('Link');
-	my $notes = ($node->getAttribute('Comments') =~ s/\/n/\n/gr);
+	my $notes = $node->getAttribute('Comments');
+	$notes =~ s/\/n/\n/g	if defined $notes;
 
 	my $loginnodes = $xp->findnodes('./LoginLinks/Login', $node);
 
@@ -278,7 +277,7 @@ sub get_all_entries {
 	    my %ee;
 
 	    %{$ee{'cmeta'}} = %{$e{'cmeta'}};
-	    @{$ee{'fieldlist'}} = @{$e{'fieldlist'}};
+	    @{$ee{'fieldlist'}} = exists $e{'fieldlist'} ? @{$e{'fieldlist'}} : ();
 	    $ee{'cmeta'}{'notes'} = $notes;
 
 	    if ($node->getAttribute('LinkDriveSerialNumber')) {		# app accounts
@@ -385,18 +384,24 @@ sub set_common_attributes {
 
     $e->{'cmeta'}{'title'} = $node->getAttribute('Name');
 
-    my $moddate = $node->getAttribute('ModifiedDate');
-    if ($moddate ne '') {
-	if ($main::opts{'modified'}) {
-	    $e->{'cmeta'}{'modified'} = date2epoch($node->getAttribute('ModifiedDate'));
+    my $mdate = $node->getAttribute('ModifiedDate');
+    my $cdate = $node->getAttribute('CreatedDate');
+    if (defined $mdate and $mdate ne '') {
+	if ($main::opts{'notimestamps'}) {
+	    push @{$e->{'fieldlist'}}, [ 'Date Modified', $mdate ];
 	}
 	else {
-	    push @{$e->{'fieldlist'}}, [ 'Date Modified', $node->getAttribute('ModifiedDate') ];
+	    $e->{'cmeta'}{'modified'} = date2epoch($mdate, 0);
 	}
     }
-
-    my $createddate = $node->getAttribute('CreatedDate');
-    push @{$e->{'fieldlist'}}, [ 'Date Created', $createddate ]		if $createddate ne '';
+    if (defined $cdate and $cdate ne '') {
+	if ($main::opts{'notimestamps'}) {
+	    push @{$e->{'fieldlist'}}, [ 'Date Created', $cdate ];
+	}
+	else {
+	    $e->{'cmeta'}{'created'} = date2epoch($cdate, 0);
+	}
+    }
 
     if (my $groupid = $node->getAttribute('ParentID')) {
 	if ($groupid > 0) {
@@ -425,7 +430,7 @@ sub parse_date_string {
 	}
     }
     else {
-	s/\.\d{3}[-]?\d{2}:\d{2}$//;					# eliminate the milliseconds and zone info
+	s/\.\d{3}[+-]?\d{2}:\d{2}$//;					# eliminate the milliseconds and zone info
 	if (my $t = Time::Piece->strptime($_, "%Y-%m-%dT%H:%M:%S")) {	# yyyy-MM-DDThh:mm:ss
 	    return $t;
 	}

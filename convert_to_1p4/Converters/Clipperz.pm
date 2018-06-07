@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Clipperz 1.01;
+package Converters::Clipperz 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -22,6 +22,7 @@ use Utils::Utils;
 use Utils::Normalize;
 
 use JSON::PP;
+use HTML::Entities;
 
 my %card_field_specs = (
     bankacct =>                 { textname => undef, fields => [
@@ -64,6 +65,9 @@ sub do_import {
     my %Cards;
 
     $_ = slurp_file($file);
+    if (/<textarea>(.+?)<\/textarea>/) {
+	$_ = decode_entities $1;
+    }
 
     s/^\x{ef}\x{bb}\x{bf}//	if $^O eq 'MSWin32';		# remove BOM
     my $decoded = decode_json $_;

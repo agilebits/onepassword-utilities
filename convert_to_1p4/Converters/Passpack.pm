@@ -82,7 +82,7 @@ sub do_import {
 	@cmeta{qw/title notes tags/} = @$row{qw/title notes tags/};
 	delete @$row{qw/title notes tags/};
 
-	# Everything that remains in the row is the the field data
+	# Everything that remains in the row is the field data
 	for (keys %$row) {
 	    debug "\tcust field: $_ => $row->{$_}";
 	    push @fieldlist, [ $_ => $row->{$_} ];

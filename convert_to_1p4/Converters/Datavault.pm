@@ -2,7 +2,7 @@
 #
 # Copyright 2015 Mike Cappella (mike@cappella.us)
 
-package Converters::Datavault 1.01;
+package Converters::Datavault 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -105,17 +105,17 @@ my %card_field_specs = (
     homeinfo =>			{ textname => '', type_out => 'note', fields => [
 	[ '_alarmcompany',	1, qr/^Alarm Company$/, ],
 	[ '_alarmphone',	1, qr/^Alarm Telephone$/, ],
-	[ '_alarmpass',		1, qr/^Alarm Password$/, ],
+	[ '_alarmpass',		1, qr/^Alarm Password$/, 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'alarm password', 'generate'=>'off' ] } ],
 	[ '_insurance',		1, qr/^Home Insurance$/, ],
 	[ '_insurancephone',	1, qr/^Insurance Telephone$/, ],
 	[ '_insurancepolicy',	1, qr/^Insurance Policy #$/, ],
     ]},
     insurance =>		{ textname => '', type_out => 'membership', fields => [
 	[ 'org_name',		0, qr/^Company$/, ],
-	[ '_subscriber_num',	1, qr/^Subscriber #$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'subscriber #' ] } ],
-	[ '_group_num',		1, qr/^Group #$/,	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group #' ] } ],
+	[ '_subscriber_num',	1, qr/^Subscriber #$/,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'subscriber #' ] } ],
+	[ '_group_num',		1, qr/^Group #$/,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'group #' ] } ],
 	[ 'membership_no',	0, qr/^Member #$/, ],
-	[ '_plan',		1, qr/^Plan$/,		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'plan' ] } ],
+	[ '_plan',		1, qr/^Plan$/,			{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'plan' ] } ],
 	[ 'phone',		0, qr/^Telephone$/, ],
 	[ '_physician',		1, qr/^Primary Physician$/, ],
 	[ '_physicianphone',	0, qr/^Physicans Telephone$/, ],	# special magic - label modified below to make it unique
@@ -155,19 +155,19 @@ my %card_field_specs = (
 	[ 'membership_no',	1, qr/^Membership Number$/, ],
 	[ 'pin',		0, qr/^Code$/, ],
 	[ '_points',		1, qr/^Points$/, ],
-	[ 'customer_service_phone',0, qr/^Telephone$/, ],
+	[ 'customer_service_phone', 0, qr/^Telephone$/, ],
     ]},
     voicemail =>		{ textname => '', type_out => 'note', fields => [
 	# fields below present in callingcard, but find_card_type() test 'voicemail' hits late
 	[ '_accessnum',		1, qr/^Access #$/, ],
-	[ '_pin',		0, qr/^PIN$/, ],
+	[ '_pin',		0, qr/^PIN$/, 		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
     ]},
     vehicleinfo =>		{ textname => '', type_out => 'note', fields => [
-	[ '_accessnum',		0, qr/^Type$/, ],
-	[ '_accessnum',		1, qr/^License Plate #$/, ],
-	[ '_accessnum',		1, qr/^VIB$/, ],
-	[ '_accessnum',		1, qr/^Insurance Type$/, ],
-	[ '_accessnum',		1, qr/^Registration #$/, ],
+	[ '_type',		0, qr/^Type$/, ],
+	[ '_licenseplate',	1, qr/^License Plate #$/, ],
+	[ '_vib',		1, qr/^VIB$/, ],
+	[ '_insurancetype',	1, qr/^Insurance Type$/, ],
+	[ '_regnum',		1, qr/^Registration #$/, ],
     ]},
 );
 
@@ -232,7 +232,7 @@ sub do_import {
 	    next;
 	}
 
-	# Everything that remains in the row is the the field data
+	# Everything that remains in the row is the field data
 	my (@fieldlist, @labels);
 	if ($row->[10] eq 'Telephone' and $row->[14] eq 'Telephone') {
 	    $row->[14] =~ s/Telephone/Physicans Telephone/

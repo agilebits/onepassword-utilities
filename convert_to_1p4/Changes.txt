@@ -1,3 +1,117 @@
+Version 1.10:
+  New Converters:
+  - yojimbo:	Barebone's Yojimo file export converter (converter name: yojimbo)
+  - msecure5:	mSecure version 5 (converter name 'msecure5', use 'msecure' for older versions)
+  - chrome:	Chrome login and credit card autofill data
+
+  Changed:
+  - onepif2html: Renamed to onepif
+  - Deprecated the --nowatchtower option, and replaced it with --notimestamps.  By default, if a
+    password manager supports record time stamps, they will be used to set the entry's time stamps
+    within 1Password.  Use --notimestamps to allow 1Password to set the time stamps as it creates
+    the records (i.e. the time you import the 1PIF file).
+  - Deprecated the --modified option supported by some converters.  Time stamps on records are now
+    set by default, unless the --notimestamps option is used.
+  - Minor changes to several converters for consistency, to conceal certain fields such as pins,
+    combination lock numbers, etc, and to properly label fields that should be password-checked
+    (or not).  Converters: datavault, ewallet, handysafe, msecure, passwordsplus, roboform, safeincloud,
+    safewallet, spbwallet splashid, wallet4.
+  - Moved common CPAN mdules into a Modules directory for clean-up, and to facilitate building the
+    zip archive.
+  - Removed the directory change from the install_modules.bat file and put the instructions back into
+    the README.  Too many users would miss the direcotry change when re-running the converter after
+    closing the command shell.  Also added a note about changing the working drive for users who have
+    their user's folder redirected to a non-C: drive.
+
+  Fixed:
+  - onepif2html: Prevent section names for empty sections from being output.
+  - keychain: Skip useless keychain entries that have no attributes (or data).
+  - passworddepot: Updated the date parsing to accept dot as a date separator (reported by a user).
+  - Change how external shell commands are called when needed, to avoid issues when file names contain
+    shell metacharacters.  The --debug option could trigger the issue, and the new Yojimbo converter
+    calls out to an external command to parse an Apple binary PLIST (for webarchive files).
+  - truekey: updated converter to handle the CSV output by more recent versions of True Key.
+  - Updated to securely handle Perl 5.26's removal of dot from the INC path.
+  - clipperz: the JSON export is now a combination of HTML+JSON - the JSON is embedded in a hidden
+    textarea portion of the HTML.
+  - stickypassword: Fixed some issues when using Perl 5.26 or higher.
+  - datavault: Fixed a few mislabeled vehicleinfo field keys.
+  - spbwallet: membership's PIN code was inadvertently going into Notes.
+  - Attachments created by the converter could be corrupted on Windows.
+  - onepif: This converter wasn't working for the HTML formatters when the 1PIF was generated using
+    1Password 4 for Windows, whose exported 1PIF is inconsistent and non-standard.
+
+  New: 
+  - The converter suite now has the ability to safely test for insecure password using the Troy Hunt
+    Pwned Passwords list.  This feature is enabled using the --checkpass option.  See the README.pdf
+    for more details.  The code used to perform these checks is *not* loaded when the option is not
+    supplied.
+  - The keychain converter now decrypts macOS keychains.
+  - AppleScript_Conversion_Helper: Many changes to simplify macOS keychain conversion.
+  - AppleScript_Conversion_Helper: Will now ask for location of the convert_to_1p4 folder if it is not
+    found on the Desktop.
+  - onepif: Replaces the former onepif2html converter.  It now accepts the name of a "formatter"
+    using the --format option.  A few formatters are available in the Formatters directory.
+    The default is html_compact.  A formatter is specified using the --format option and the name of
+    a formatter (its non-suffixed name, e.g. --format html_expanded).  New formatters can be added as
+    required by writing the code, naming them appropriatly, and placing them into the Formatters
+    directory.  Currently XLST (.xls) and Perl module (.pm) code is supported.  The name of the formatter
+    specifies its output format, its descriptive meaning, and the code employed in the file.  The general
+    naming scheme is <output format>_<descriptive name>.<code suffix>.  For example, html_expanded.xls will
+    output "html", create an .html file, and will be processed using XML stylesheet transformations (due to
+    the .xsl suffix).  Its descriptive part is simply "expanded" (one can argue that's not very descriptive).
+    If there is no _<descriptive name> part in the filename, it is expected that the <output format> is
+    sufficient to serve as the description as well (example: csv.pm will convert to CSV).
+  - onepif: The XSTL stylesheets have been changed a bit, especially the html_expanded stylesheet (formerly
+    the onepif2html2 converter).  It is now more readable with larger fonts, and places the created and
+    modified dates to the top right area of the item.
+  - onpif: The --outfile option is now usable so the output file and suffix can be specfied via command line.
+    File suffixes will be taken from the specified formatter's name.
+  - onpif: Now outputs a file name of 1P_converted.<suffix> where <suffix> reflects the chosen formatter.
+    Examples: 1P_converted.html, 1P_converted.csv.
+  - onpif: Now supports a --percategory option to output items into category-specific files (especially
+    useful for the csv formatter).
+  - roboform: Converter now supports adding custom field names and patterns to the converter to match any
+    unmatched field names.  There are username and password regular expression patterns, and they are listed
+    in priorty order, such that when there are multiple form strings present in the Roboform output, the
+    higher priority matches are used to designate the username and password fields.
+  - roboform: Converter now supports adding language-specific strings to the converter to detect the export
+    type.
+  - Added menu style type checking in the PIF generator for a Bank Account's (account) "type" field, and
+    Identity's "sec" field.  Unsupported types go to notes.
+  - csv: Added support for more categories: Bank Account, Identity, Password, and Social Security.
+  - msecure: Added support for reading localization files from within the Languages directory, when they are
+    not found in localation used by version 3.5.x.
+  - msecure: Added new option --sepchar to allow defining the CSV separator character, useful for non-English
+    locales that use comma as a digits separator.  Usage: --sepchar ";"
+  - msecure: Added a check for the number of columns detected per row to help users handle issues with the
+    wrong sepeator character, or when the exported CSV has been altered incorrectly.  The converter will
+    abort if there are not at least 4 columns.
+  - msecure: Added new option --dumpcats to dump some statistics about matched/unmatched categories in the
+    export, the help in customizing the converter.  It will output the expected vs actual field counts, and
+    list the titles of each entry under the number of fields found for the entry.
+  - msecure: Add the mSecure Type (category) as a tag in the form of mSecure::TypeName.
+  - safeincloud: Added a minimum field match threshold system to better detect categories from the ambiguous
+    field names in the XML export.
+  - msecure: new option --dumpcats will summarize the export's list of the categories and their field counts,
+    the help in customization.
+  - keeper: Converter updated to handle version Keeper Desktop 10.
+  - keepass2: Fixed a problem with attachment creation (status result was being tested w/the wrong operator).
+    Thanks: Ross Sechler.
+  - keepass2: Fixed two typos in the attribute name LastModificationTime.  Thanks: Eamon Hetherton.
+  - msecure5: New converter named msecure5 for version 5 of mSecure.  Use the older 'msecure' for versions
+    prior to version 5.
+  - csv: Remove a BOM if one exists.
+  - Added more menu item matching in the PIF generator (categories: database, email, wireless).
+  - csv: Now supports columns 'modified' and 'created', to set the record's time stamps.  These are Unix epoch
+    values (seconds since 1/1/1970).
+  - keeper: Converter updated to handle version Keeper Desktop 12 on Windows, which now includes a BOM.
+
+  Internal Changes:
+  - vcard: removed extraneous assigment to opts variable
+  - Including the module RFT::Tokenizer with the distribution, for Yojimbo.
+  - keyfinder: removed extraneous comments left over from developement
+
 Version 1.09:
   New Converters:
   - passwordsafe:	Password Safe (pwsafe) (converter name: passwordsafe).

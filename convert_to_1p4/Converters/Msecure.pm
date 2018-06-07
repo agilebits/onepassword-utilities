@@ -1,8 +1,8 @@
-# mSecure CSV export converter
+# mSecure 3 CSV export converter
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Msecure 1.01;
+package Converters::Msecure 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -43,9 +43,9 @@ my %card_field_specs = (
     birthdays => 		{ textname => 'Birthdays', type_out => 'note', fields => [
 	[ 'date',		0, 'Date', ],
     ]},
-    callingcards =>		{ textname => 'Calling Cards', type_out => 'login', fields => [
-	[ 'access_no',		0, 'Access No.', ],
-	[ 'password',		0, 'PIN', ],
+    callingcards =>		{ textname => 'Calling Cards', type_out => 'note', fields => [
+	[ '_access_no',		0, 'Access No.', 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_string, 'access #' ] } ],
+	[ '_pin',		0, 'PIN',		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
     ]},
     clothes =>			{ textname => 'Clothes Size', type_out => 'note', fields => [
 	[ 'shirt_size',		0, 'Shirt Size', ],
@@ -53,8 +53,8 @@ my %card_field_specs = (
 	[ 'shoe_size',		0, 'Shoe Size', ],
 	[ 'dress_size',		0, 'Dress Size', ],
     ]},
-    combinations =>		{ textname => 'Combinations', type_out => 'login', fields => [
-	[ 'password',		0, 'Code', ],
+    combinations =>		{ textname => 'Combinations', type_out => 'note', fields => [
+	[ '_code',		0, 'Code', 		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'code', 'generate'=>'off' ] } ],
     ]},
     creditcard =>		{ textname => 'Credit Cards', fields => [
 	[ 'ccnum',		0, 'Card No.', ],
@@ -155,9 +155,9 @@ my %card_field_specs = (
 	[ 'vehicledatepurch',	0, 'Date Purchased', ],
 	[ 'vehicletiresize',	0, 'Tire Size', ],
     ]},
-    voicemail =>		{ textname => 'Voice Mail', type_out => 'login', fields => [
+    voicemail =>		{ textname => 'Voice Mail', type_out => 'note', fields => [
 	[ 'vmaccessno',		0, 'Access No.', ],
-	[ 'password',		0, 'PIN', ],
+	[ 'password',		0, 'PIN', 	{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'pin', 'generate'=>'off' ] } ],
     ]},
 );
 
@@ -169,6 +169,10 @@ sub do_init {
 	'imptypes'  	=> qw/userdefined/,
 	'opts'		=> [ [ q{-l or --lang <lang>        # language in use: de es fr it ja ko pl pt ru zh-Hans zh-Hant},
 			       'lang|l=s'	=> sub { init_localization_table($_[1]) or Usage(1, "Unknown language type: '$_[1]'") } ],
+	      		     [ q{      --sepchar <char>     # set the CSV separator character to char },
+			       'sepchar=s' ],
+	      		     [ q{      --dumpcats           # print the export's categories and field quantities },
+			       'dumpcats' ],
 			   ],
     }
 }
@@ -183,11 +187,16 @@ sub do_import {
 	$ll_typeMap{ll($card_field_specs{$_}{'textname'})} = $_;
     }
 
+    my $sep_char = $main::opts{'sepchar'} // ',';
+
+    length $sep_char == 1 or
+	bail "The separator character should only be a single character - you've specified \"$sep_char\" which is ", length $sep_char, " characters.";
+
     # The mSecure/Windows CSV output is horribly broken
     my $csv = Text::CSV->new ({
 	    binary => 1,
 	    allow_loose_quotes => 1,
-	    sep_char => ',',
+	    sep_char => $sep_char,
 	    $^O eq 'MSWin32' ? ( eol => "\x{a}", escape_char => undef ) : (  eol => ",\x{a}" )
     });
 
@@ -201,6 +210,7 @@ sub do_import {
 	$_ = <$io>; 
     }
 
+    my %cat_field_tally;
     my %Cards;
     my ($n, $rownum) = (1, 1);
 
@@ -209,7 +219,13 @@ sub do_import {
 	    warn "Skipping unexpected empty row: $n";
 	    next;
 	}
-	debug 'ROW: ', $rownum++;
+
+	my @row_orig = @$row;
+	@$row >= 4 or
+	    bail 'Only detected ', scalar @$row, pluralize(' column', scalar @$row), " in row $rownum.\n",
+	    "The CSV separator \"$sep_char\" may to be incorrect (use --sepchar), or this may not be a raw, unedited CSV mSecure export.";
+
+
 	my ($itype, $otype, %cmeta, @fieldlist);
 
 	# on Windows, need to convert \" into "
@@ -225,15 +241,23 @@ sub do_import {
 	# defines the meaning of each column per cardtype.  Some cardtypes will be remapped to 1P4
 	# types.
 	#
-	$cmeta{'tags'}	 = shift @$row;
+	push @{$cmeta{'tags'}}, shift @$row;
 	my $msecure_type = shift @$row;
 	$cmeta{'title'}	 = shift @$row;
 	my $notes	 = shift @$row;
 
+	debug 'ROW: ', $rownum++, " $cmeta{'title'}";
+
+	if ($main::opts{'dumpcats'}) {
+	    $cat_field_tally{$msecure_type}{scalar @$row}{$cmeta{'title'}}++;
+	    next;
+	}
+
 	my @notes_list = ([], [], []);
 	push @{$notes_list[2]},	$notes	 if $notes ne '';
 
-	$cmeta{'folder'} = [ $cmeta{'tags'} ];
+	$cmeta{'folder'} = [ $cmeta{'tags'}[0] ];
+	push @{$cmeta{'tags'}}, join '::', 'mSecure', $msecure_type;
 
 	# When a user redefines an mSecure type, the card type and the field meanings are unknown.
 	# In this case (the type isn't available in %ll_typeMap), force the card type to 'note' and push
@@ -245,7 +269,7 @@ sub do_import {
 
 	    verbose "Renamed card type '$msecure_type' is not a default type, and is being mapped to Secure Notes\n";
 	    $itype = $otype = 'note';
-	    push @{$notes_list[0]}, join ': ', ll('Type'), $msecure_type;
+	    #push @{$notes_list[0]}, join ': ', ll('Type'), $msecure_type;
 	    my $i;
 	    while (@$row) {
 		my ($key, $val) = ('Field_' . $i++, shift @$row);
@@ -322,6 +346,35 @@ sub do_import {
 	warn "Unexpected failure parsing CSV: row $n";
     }
 
+    if ($main::opts{'dumpcats'}) {
+	say ' ' x 36, ' Fields    Fields';
+	printf "%25s %8s  %s   %s\n", 'Categories', 'Known?', 'Expected', 'Actual';
+	for my $catname (sort keys %cat_field_tally) {
+	    my @found = grep { $card_field_specs{$_}{'textname'} eq $catname  } keys %card_field_specs;
+	    my $expected = 'N/A';
+	    if (@found) {
+		my $type = $found[0];
+		$expected = 4 + @{$card_field_specs{$type}{'fields'}};
+	    }
+
+	    printf "%25s %6s      %3s      %s\n", $catname,
+		    scalar @found ? 'yes' : 'NO',
+		    $expected,
+		    join(", ", sort map { $_ + 4 } keys %{$cat_field_tally{$catname}});
+	}
+	for my $catname (sort keys %cat_field_tally) {
+	    print "$catname: \n";
+	    for my $colcount (sort keys %{$cat_field_tally{$catname}}) {
+		printf "%d entries found with %d columns\n", scalar keys %{$cat_field_tally{$catname}{$colcount}}, $colcount + 4;
+		for my $title (sort keys %{$cat_field_tally{$catname}{$colcount}}) {
+		    printf "\t\t%s\n", $title;
+		}
+	    }
+	}
+
+	return undef;
+    }
+
     summarize_import('item', $n - 1);
     return \%Cards;
 }
@@ -336,6 +389,8 @@ sub do_export {
 # The %localized table will be initialized using the localized name as the key, and the english version
 # as the value.
 #
+# Version 5 appear to not ship with languges files, so lets look in our local Languages directory.
+#
 my %localized;
 
 sub init_localization_table {
@@ -344,8 +399,12 @@ sub init_localization_table {
 	unless defined $lang and $lang =~ /^(de|es|fr|it|ja|ko|pl|pt|ru|zh-Hans|zh-Hant)$/;
 
     if ($lang) {
-	my $lstrings_path = '/Applications/mSecure.app/Contents/Resources/XX.lproj/Localizable.strings';
-	$lstrings_path =~ s/XX/$lang/;
+	my $lstrings_base = 'XX.lproj/Localizable.strings';
+	$lstrings_base =~ s/XX/$lang/;
+	my $lstrings_path = join '/', '/Applications/mSecure.app/Contents/Resources', $lstrings_base;
+	if (! -e $lstrings_path) {
+	    $lstrings_path = join '/', 'Languages/mSecure', $lstrings_base;
+	}
 
 	local $/ = "\r\n";
 	open my $lfh, "<:encoding(utf16)", $lstrings_path

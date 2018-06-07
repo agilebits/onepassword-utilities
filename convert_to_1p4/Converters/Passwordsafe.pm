@@ -2,7 +2,7 @@
 #
 # Copyright 2016 Mike Cappella (mike@cappella.us)
 
-package Converters::Passwordsafe 1.00;
+package Converters::Passwordsafe 1.01;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -45,9 +45,6 @@ sub do_init {
     return {
 	'specs'		=> \%card_field_specs,
 	'imptypes'  	=> undef,
-	'opts'		=> [ [ q{-m or --modified           # set item's last modified date },
-			       'modified|m' ],
-			   ],
     };
 }
 
@@ -88,10 +85,13 @@ sub do_import {
 		$cmeta{'folder'} = [ $val ];
 		debug 'Group: ', $cmeta{'tags'};
 	    }
-	    elsif ($_ =~ /^(?:rm|pm|c)timex$/ and $main::opts{'modified'}) {
+	    elsif ($_ =~ /^ctimex$/ and not $main::opts{'notimestamps'}) {
+		# ctimex:  record's creation time
+		$cmeta{'created'} = date2epoch($val);
+	    }
+	    elsif ($_ =~ /^(?:rm|pm)timex$/ and not $main::opts{'notimestamps'}) {
 		# rmtimex: last modification time for non-password item
 		# pmtimex: last modification time for password
-		# ctime:   record's creation time
 		# use the most recent of the three to set the modified time
 		my $epochtime = date2epoch($val);
 		if (! defined $cmeta{'modified'} or $epochtime > $cmeta{'modified'}) {

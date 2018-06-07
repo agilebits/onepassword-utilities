@@ -1,5 +1,3 @@
-# Copied directly from http://cpansearch.perl.org/src/MAKAMAKA/Text-CSV-1.32/lib/Text/CSV.pm
-
 package Text::CSV;
 
 

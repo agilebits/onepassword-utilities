@@ -2,7 +2,7 @@
 #
 # Copyright 2014 Mike Cappella (mike@cappella.us)
 
-package Converters::Handysafe 1.01;
+package Converters::Handysafe 1.02;
 
 our @ISA 	= qw(Exporter);
 our @EXPORT     = qw(do_init do_import do_export);
@@ -83,9 +83,9 @@ my %card_field_specs = (
         [ 'member_name',        0, 'First + Last', ],	# see 'Fixup: combine names'; input never matches
         [ 'membership_no',      2, 'ID', ],
     ]},
-    lockcode =>                 { textname => undef, type_out => 'login', fields => [
+    lockcode =>                 { textname => undef, type_out => 'note', fields => [
         [ 'combolocation',      0, 'Location' ],
-        [ 'password',           1, 'Code' ],
+        [ '_code',          	1, 'Code',		{ custfield => [ $Utils::PIF::sn_main, $Utils::PIF::k_concealed, 'password', 'generate'=>'off' ] } ],
         [ 'comboother',         0, 'Other' ],
     ]},
     login =>                    { textname => undef, fields => [
